@@ -69,7 +69,6 @@ class AppSettings(BaseSettings):
     gemini: GeminiSettings
     storage: StorageSettings = Field(default_factory=StorageSettings)
 
-
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
     """設定をロードし、再利用する。

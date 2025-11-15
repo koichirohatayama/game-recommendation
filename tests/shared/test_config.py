@@ -51,6 +51,7 @@ def test_settings_load_from_nested_env(monkeypatch, tmp_path) -> None:
 
     assert settings.igdb.client_id == "cid"
     assert settings.igdb.client_secret.get_secret_value() == "secret"
+    assert settings.igdb.app_access_token.get_secret_value() == "secret"
     assert str(settings.discord.webhook_url) == "https://example.com/webhook"
     assert settings.discord.webhook_username == "GameReco"
     assert settings.gemini.api_key.get_secret_value() == "gkey"
