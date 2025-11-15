@@ -15,6 +15,7 @@ dependencies = [
     "pytest>=8.0",
     "ruff>=0.3",
     "igdb-api-v4>=0.1.4",
+    "google-generativeai>=0.7",
 ]
 
 [project.scripts]
