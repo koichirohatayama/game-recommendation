@@ -41,6 +41,16 @@ class IGDBGameDTO(DTO):
 
 
 @dataclass(slots=True)
+class IGDBTagDTO(DTO):
+    """ジャンル/キーワードなどタグ情報の DTO。"""
+
+    id: int
+    name: str
+    slug: str | None = None
+    tag_class: str | None = None
+
+
+@dataclass(slots=True)
 class IGDBGameResponse(DTO):
     """ゲームリストのレスポンス。"""
 
@@ -208,9 +218,39 @@ def _coerce_int_tuple(raw: Any) -> tuple[int, ...]:
     return tuple(ints)
 
 
+def parse_tags_from_payload(payload: bytes) -> tuple[IGDBTagDTO, ...]:
+    """タグ系エンドポイントのレスポンスを DTO に変換する。"""
+
+    if not payload:
+        return ()
+
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:  # noqa: PERF203 - 明確な例外
+        raise ValueError("Invalid JSON payload for IGDB tags") from exc
+
+    if not isinstance(decoded, list):
+        raise ValueError("IGDB tag payload must be an array")
+
+    tags: list[IGDBTagDTO] = []
+    for raw_tag in decoded:
+        if not isinstance(raw_tag, dict):
+            raise ValueError("Each tag record must be an object")
+        tag_id = raw_tag.get("id")
+        name = raw_tag.get("name")
+        if not isinstance(tag_id, int) or not isinstance(name, str):
+            raise ValueError("Tag record must contain `id` (int) and `name` (str)")
+        slug = raw_tag.get("slug") if isinstance(raw_tag.get("slug"), str) else None
+        tags.append(IGDBTagDTO(id=tag_id, name=name, slug=slug))
+
+    return tuple(tags)
+
+
 __all__ = [
     "IGDBGameDTO",
     "IGDBGameResponse",
     "IGDBResponseFormat",
+    "IGDBTagDTO",
     "parse_games_from_payload",
+    "parse_tags_from_payload",
 ]

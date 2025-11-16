@@ -20,6 +20,7 @@ from game_recommendation.infra.igdb import (
     IGDBResponseFormat,
     IGDBRetryConfig,
 )
+from game_recommendation.infra.igdb.client import _TAG_ENDPOINTS
 
 
 class StubWrapper:
@@ -183,3 +184,27 @@ def test_fetch_games_non_retriable_error() -> None:
 
     with pytest.raises(IGDBRequestError):
         client.fetch_games(query)
+
+
+@pytest.mark.parametrize(
+    "tag_class, endpoint",
+    [
+        ("genre", "genres"),
+        ("keyword", "keywords"),
+        ("theme", "themes"),
+        ("player_perspective", "player_perspectives"),
+        ("franchise", "franchises"),
+        ("collection", "collections"),
+    ],
+)
+def test_fetch_tags_endpoint_selection(tag_class: str, endpoint: str) -> None:
+    payload = json.dumps([{"id": 1, "name": "test"}]).encode()
+    client = _build_client([payload])
+
+    result = client.fetch_tags(tag_class=tag_class, igdb_ids=[1])
+
+    assert len(result) == 1
+    called_endpoint, _ = client._wrapper.calls[0]  # type: ignore[attr-defined]
+    assert called_endpoint == endpoint
+    # 確認: マッピング定義に存在すること
+    assert _TAG_ENDPOINTS[tag_class] == endpoint

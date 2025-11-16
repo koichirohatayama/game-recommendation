@@ -1,6 +1,7 @@
 """DB 向けインフラ。"""
 
 from .models import Base, GameEmbedding, GameTag, GameTagLink, IgdbGame, UserFavoriteGame
+from .repositories import SQLAlchemyGameTagRepository
 from .session import DatabaseError, DatabaseSessionManager
 from .sqlite_vec import (
     EmbeddingRepository,
@@ -28,6 +29,7 @@ __all__ = [
     "SQLiteVecConnectionManager",
     "SQLiteVecEmbeddingRepository",
     "SQLiteVecError",
+    "SQLAlchemyGameTagRepository",
     "UserFavoriteGame",
     "seed_embeddings",
 ]

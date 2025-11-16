@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -15,11 +15,22 @@ from requests import HTTPError
 from game_recommendation.infra.igdb.dto import (
     IGDBGameResponse,
     IGDBResponseFormat,
+    IGDBTagDTO,
     parse_games_from_payload,
+    parse_tags_from_payload,
 )
 from game_recommendation.shared.config import AppSettings, get_settings
 from game_recommendation.shared.exceptions import BaseAppError
 from game_recommendation.shared.logging import get_logger
+
+_TAG_ENDPOINTS: dict[str, str] = {
+    "genre": "genres",
+    "keyword": "keywords",
+    "theme": "themes",
+    "player_perspective": "player_perspectives",
+    "franchise": "franchises",
+    "collection": "collections",
+}
 
 
 class IGDBWrapperProtocol(Protocol):
@@ -226,6 +237,14 @@ class IGDBClientProtocol(Protocol):
     ) -> IGDBGameResponse:
         """ゲームエンドポイントへクエリを実行する。"""
 
+    def fetch_tags(
+        self,
+        *,
+        tag_class: str,
+        igdb_ids: Sequence[int],
+    ) -> tuple[IGDBTagDTO, ...]:
+        """タグ系（ジャンル/キーワード等）を取得する。"""
+
 
 class IGDBClient(IGDBClientProtocol):
     """IGDB API v4 公式ラッパーを包んだクライアント。"""
@@ -266,6 +285,40 @@ class IGDBClient(IGDBClientProtocol):
             raise IGDBRequestError("Failed to parse IGDB response") from exc
 
         return IGDBGameResponse(items=items, raw=payload, format=response_format)
+
+    def fetch_tags(
+        self,
+        *,
+        tag_class: str,
+        igdb_ids: Sequence[int],
+    ) -> tuple[IGDBTagDTO, ...]:
+        if not igdb_ids:
+            return ()
+
+        endpoint = self._resolve_tag_endpoint(tag_class)
+        ids_clause = ", ".join(str(tag_id) for tag_id in igdb_ids)
+        query = (
+            IGDBQueryBuilder()
+            .select("id", "name", "slug")
+            .where(f"id = ({ids_clause})")
+            .limit(len(igdb_ids))
+            .build()
+        )
+
+        payload = self._perform_request(
+            endpoint=endpoint,
+            query=query,
+            response_format=IGDBResponseFormat.JSON,
+        )
+        try:
+            items = parse_tags_from_payload(payload)
+        except ValueError as exc:
+            raise IGDBRequestError("Failed to parse IGDB tag response") from exc
+
+        return tuple(
+            IGDBTagDTO(id=item.id, name=item.name, slug=item.slug, tag_class=tag_class)
+            for item in items
+        )
 
     def _perform_request(
         self,
@@ -312,6 +365,13 @@ class IGDBClient(IGDBClientProtocol):
         if status_code is None:
             return True
         return status_code in self._retry_config.retriable_statuses
+
+    def _resolve_tag_endpoint(self, tag_class: str) -> str:
+        endpoint = _TAG_ENDPOINTS.get(tag_class)
+        if endpoint is None:
+            msg = f"Unsupported tag class: {tag_class}"
+            raise IGDBRequestError(msg)
+        return endpoint
 
     def _get_wrapper(self) -> IGDBWrapperProtocol:
         token = self._token_provider.get_token()
@@ -360,6 +420,7 @@ __all__ = [
     "IGDBRequestError",
     "IGDBResponseFormat",
     "IGDBRetryConfig",
+    "IGDBTagDTO",
     "IGDBWrapperProtocol",
     "TwitchOAuthClient",
     "build_igdb_client",
