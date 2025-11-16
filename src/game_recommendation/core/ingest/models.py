@@ -214,3 +214,42 @@ class EmbeddedGamePayload(DTO):
     ) -> UserFavoriteGame:
         resolved_notes = _normalize_text(notes) or self.favorite_notes
         return UserFavoriteGame(game_id=game_record_id, notes=resolved_notes)
+
+    def to_prompt_string(self, *, max_description_length: int = 500) -> str:
+        """プロンプト生成用の文字列を生成する。
+
+        Args:
+            max_description_length: 説明文の最大文字数（デフォルト: 500）
+
+        Returns:
+            タイトル・概要・タグをまとめた文字列
+        """
+        # タイトル取得（必須）
+        title = self.igdb_game.name
+
+        # 説明文の取得とサニタイズ
+        description = self.description or ""
+        # 改行を空白に置換
+        description = description.replace("\n", " ").replace("\r", " ")
+        # 連続した空白を1つにまとめる
+        description = " ".join(description.split())
+        # 長文のトリミング
+        if len(description) > max_description_length:
+            description = description[:max_description_length].rsplit(" ", 1)[0] + "..."
+
+        # タグの取得
+        tag_labels = [tag.label for tag in self.tags] if self.tags else []
+        tags_str = ", ".join(tag_labels) if tag_labels else "なし"
+
+        # キーワードの取得
+        keywords_str = ", ".join(self.keywords) if self.keywords else "なし"
+
+        # 文字列組み立て
+        parts = [
+            f"タイトル: {title}",
+            f"説明: {description}" if description else "説明: なし",
+            f"タグ: {tags_str}",
+            f"キーワード: {keywords_str}",
+        ]
+
+        return "\n".join(parts)
