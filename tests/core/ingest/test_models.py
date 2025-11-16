@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from array import array
 from datetime import UTC, datetime
 
 import pytest
@@ -58,12 +59,12 @@ def test_to_igdb_game_builds_insertable_payload() -> None:
 
     result = payload.to_igdb_game()
 
-    assert result["igdb_id"] == 123
-    assert result["title"] == "Sample Game"
-    assert result["description"] == "Long description"
-    assert result["release_date"] == "2024-01-02"
-    assert result["cover_url"] == "https://example.com/cover.png"
-    cache = json.loads(result["tags_cache"])
+    assert result.igdb_id == 123
+    assert result.title == "Sample Game"
+    assert result.description == "Long description"
+    assert result.release_date == "2024-01-02"
+    assert result.cover_url == "https://example.com/cover.png"
+    cache = json.loads(result.tags_cache)
     assert set(cache["tags"]) == {"RPG", "Fantasy"}
     assert cache["keywords"] == ["hero", "adventure"]
 
@@ -78,10 +79,12 @@ def test_to_game_embedding_merges_metadata() -> None:
 
     result = payload.to_game_embedding()
 
-    assert result["game_id"] == "123"
-    assert result["dimension"] == 3
-    assert result["title_embedding"] == (0.1, 0.2, 0.3)
-    metadata = result["embedding_metadata"]
+    assert result.game_id == "123"
+    assert result.dimension == 3
+    title_vec = array("f")
+    title_vec.frombytes(result.title_embedding)
+    assert tuple(title_vec) == pytest.approx((0.1, 0.2, 0.3))
+    metadata = result.embedding_metadata
     assert metadata["title"] == "Sample Game"
     assert "tags" in metadata and "keywords" in metadata
     assert metadata["provider"] == "fake"
@@ -92,13 +95,13 @@ def test_to_game_tag_and_link_payloads() -> None:
     tags = payload.to_game_tag()
 
     assert len(tags) == 2
-    lookup = {(tag["slug"], tag["tag_class"]): idx + 1 for idx, tag in enumerate(tags)}
+    lookup = {(tag.slug, tag.tag_class): idx + 1 for idx, tag in enumerate(tags)}
 
     links = payload.to_game_tag_link(game_record_id=42, tag_id_lookup=lookup)
 
     assert len(links) == 2
-    assert all(link["game_id"] == 42 for link in links)
-    assert {link["tag_id"] for link in links} == {1, 2}
+    assert all(link.game_id == 42 for link in links)
+    assert {link.tag_id for link in links} == {1, 2}
 
 
 def test_to_game_tag_link_raises_for_missing_tag() -> None:
@@ -119,5 +122,5 @@ def test_to_user_favorite_game_prefers_argument_notes() -> None:
 
     result = payload.to_user_favorite_game(game_record_id=9, notes=" from user ")
 
-    assert result["game_id"] == 9
-    assert result["notes"] == "from user"
+    assert result.game_id == 9
+    assert result.notes == "from user"

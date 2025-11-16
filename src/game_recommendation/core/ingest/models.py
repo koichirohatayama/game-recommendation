@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+from array import array
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from game_recommendation.infra.db.models import (
+    GameEmbedding,
+    GameTag,
+    GameTagLink,
+    IgdbGame,
+    UserFavoriteGame,
+)
 from game_recommendation.infra.igdb.dto import IGDBGameDTO
 from game_recommendation.shared.types import DTO
 
@@ -56,13 +64,13 @@ class GameTagPayload(DTO):
     def identity(self) -> tuple[str, str]:
         return (self.slug, self.tag_class)
 
-    def to_game_tag(self) -> dict[str, Any]:
-        return {
-            "slug": self.slug,
-            "label": self.label,
-            "tag_class": self.tag_class,
-            "igdb_id": self.igdb_id,
-        }
+    def to_game_tag(self) -> GameTag:
+        return GameTag(
+            slug=self.slug,
+            label=self.label,
+            tag_class=self.tag_class,
+            igdb_id=self.igdb_id,
+        )
 
 
 @dataclass(slots=True)
@@ -96,16 +104,20 @@ class IngestedEmbedding(DTO):
         game_id: str,
         *,
         extra_metadata: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> GameEmbedding:
         metadata = dict(extra_metadata or {})
         metadata.update(self.metadata)
-        return {
-            "game_id": str(game_id),
-            "dimension": self.dimension,
-            "title_embedding": self.title_embedding,
-            "description_embedding": self.description_embedding,
-            "embedding_metadata": metadata,
-        }
+
+        def _blob(values: Sequence[float]) -> bytes:
+            return array("f", (float(value) for value in values)).tobytes()
+
+        return GameEmbedding(
+            game_id=str(game_id),
+            dimension=self.dimension,
+            title_embedding=_blob(self.title_embedding),
+            description_embedding=_blob(self.description_embedding),
+            embedding_metadata=metadata,
+        )
 
 
 @dataclass(slots=True)
@@ -143,7 +155,7 @@ class EmbeddedGamePayload(DTO):
             return value.date().isoformat()
         return None
 
-    def to_igdb_game(self) -> dict[str, Any]:
+    def to_igdb_game(self) -> IgdbGame:
         tags_cache = json.dumps(
             {
                 "tags": [tag.label for tag in self.tags],
@@ -151,19 +163,19 @@ class EmbeddedGamePayload(DTO):
                 "keywords": list(self.keywords),
             }
         )
-        return {
-            "igdb_id": self.igdb_game.id,
-            "slug": self.igdb_game.slug,
-            "title": self.igdb_game.name,
-            "description": self.description,
-            "summary": self.igdb_game.summary,
-            "release_date": self.release_date,
-            "cover_url": self.cover_url,
-            "checksum": self.checksum,
-            "tags_cache": tags_cache,
-        }
+        return IgdbGame(
+            igdb_id=self.igdb_game.id,
+            slug=self.igdb_game.slug,
+            title=self.igdb_game.name,
+            description=self.description or "",
+            summary=self.igdb_game.summary,
+            release_date=self.release_date,
+            cover_url=self.cover_url,
+            checksum=self.checksum,
+            tags_cache=tags_cache,
+        )
 
-    def to_game_embedding(self) -> dict[str, Any]:
+    def to_game_embedding(self) -> GameEmbedding:
         if self.embedding is None:
             msg = "embeddingが指定されていません"
             raise ValueError(msg)
@@ -175,26 +187,23 @@ class EmbeddedGamePayload(DTO):
             "keywords": list(self.keywords),
             "slug": self.igdb_game.slug,
         }
-        return self.embedding.to_game_embedding(
-            str(self.igdb_game.id),
-            extra_metadata=metadata,
-        )
+        return self.embedding.to_game_embedding(str(self.igdb_game.id), extra_metadata=metadata)
 
-    def to_game_tag(self) -> tuple[dict[str, Any], ...]:
+    def to_game_tag(self) -> tuple[GameTag, ...]:
         return tuple(tag.to_game_tag() for tag in self.tags)
 
     def to_game_tag_link(
         self,
         game_record_id: int,
         tag_id_lookup: Mapping[tuple[str, str], int],
-    ) -> tuple[dict[str, int], ...]:
-        links: list[dict[str, int]] = []
+    ) -> tuple[GameTagLink, ...]:
+        links: list[GameTagLink] = []
         for tag in self.tags:
             tag_id = tag_id_lookup.get(tag.identity)
             if tag_id is None:
                 msg = f"tag_idが見つかりません: {tag.identity}"
                 raise KeyError(msg)
-            links.append({"game_id": game_record_id, "tag_id": tag_id})
+            links.append(GameTagLink(game_id=game_record_id, tag_id=tag_id))
         return tuple(links)
 
     def to_user_favorite_game(
@@ -202,9 +211,6 @@ class EmbeddedGamePayload(DTO):
         game_record_id: int,
         *,
         notes: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> UserFavoriteGame:
         resolved_notes = _normalize_text(notes) or self.favorite_notes
-        return {
-            "game_id": game_record_id,
-            "notes": resolved_notes,
-        }
+        return UserFavoriteGame(game_id=game_record_id, notes=resolved_notes)
