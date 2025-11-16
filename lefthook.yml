@@ -2,9 +2,9 @@ pre-commit:
   parallel: true
   commands:
     ruff-check:
-      run: scripts/lint.sh
-    ruff-format-check:
-      run: scripts/format.sh --check
+      run: scripts/lint.sh --fix
+    ruff-format:
+      run: scripts/format.sh
 
 pre-push:
   commands:
