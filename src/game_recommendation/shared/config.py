@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, ValidationError, model_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .exceptions import ConfigurationError
@@ -19,16 +19,14 @@ class IGDBSettings(BaseModel):
 
     client_id: str = Field(..., description="IGDB API client id")
     client_secret: SecretStr = Field(..., description="IGDB API client secret")
-    app_access_token: SecretStr | None = Field(
-        default=None,
-        description="IGDB API app access token (Twitch OAuth client credentials)",
+    token_url: AnyHttpUrl = Field(
+        "https://id.twitch.tv/oauth2/token", description="Twitch OAuth2 token endpoint"
     )
-
-    @model_validator(mode="after")
-    def _default_token(self) -> IGDBSettings:
-        if self.app_access_token is None:
-            self.app_access_token = self.client_secret
-        return self
+    refresh_margin_seconds: int = Field(
+        300,
+        ge=0,
+        description="アクセストークン有効期限のこの秒数前になったら再取得する",
+    )
 
 
 class DiscordSettings(BaseModel):

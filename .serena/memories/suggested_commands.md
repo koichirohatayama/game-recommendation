@@ -2,7 +2,9 @@
 - `uv sync` – pyproject.toml の依存をローカル環境へ同期。
 - `uv run ruff check src tests` – Ruff lint 実行。
 - `uv run ruff format src tests` – Ruff formatter でコード整形。
+- `scripts/lint.sh` – uv で lint 実行。uv が macOS の DynamicStore パニックで失敗したら `.uv_cache` にフォールバックし、さらに .venv の ruff で継続。
 - `uv run pytest` – テストスイート実行。
+- `scripts/test.sh` – uv で pytest 実行。uv がパニックした場合は `.uv_cache`/`.cache` を使い、.venv の pytest へ自動フォールバック。
 - `uv run game-reco ...` – typer ベース CLI エントリ（game_recommendation.cli.app:main）を起動。
 - `uv run streamlit run src/game_recommendation/web/app.py` – Streamlit ダッシュボード起動（app.py などエントリを実装後）。
 - `scripts/migrate.sh` – Alembic でスキーマを適用（デフォルト head）。`scripts/migrate.sh <revision>` で指定リビジョンへ。デフォルトの接続先は `alembic.ini` の `sqlalchemy.url`（sqlite:///./var/game_recommendation.db）。

@@ -51,7 +51,8 @@ def test_settings_load_from_nested_env(monkeypatch, tmp_path) -> None:
 
     assert settings.igdb.client_id == "cid"
     assert settings.igdb.client_secret.get_secret_value() == "secret"
-    assert settings.igdb.app_access_token.get_secret_value() == "secret"
+    assert str(settings.igdb.token_url) == "https://id.twitch.tv/oauth2/token"
+    assert settings.igdb.refresh_margin_seconds == 300
     assert str(settings.discord.webhook_url) == "https://example.com/webhook"
     assert settings.discord.webhook_username == "GameReco"
     assert settings.gemini.api_key.get_secret_value() == "gkey"
@@ -59,17 +60,19 @@ def test_settings_load_from_nested_env(monkeypatch, tmp_path) -> None:
     assert str(settings.storage.sqlite_path) == "db.sqlite"
 
 
-def test_settings_prefer_app_access_token(monkeypatch, tmp_path) -> None:
-    """App access token が指定されている場合はそちらを利用する。"""
+def test_settings_override_token_config(monkeypatch, tmp_path) -> None:
+    """トークンエンドポイントとリフレッシュ猶予を環境変数で上書きできる。"""
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("IGDB__CLIENT_ID", "cid")
     monkeypatch.setenv("IGDB__CLIENT_SECRET", "secret")
-    monkeypatch.setenv("IGDB__APP_ACCESS_TOKEN", "app-token")
+    monkeypatch.setenv("IGDB__TOKEN_URL", "https://auth.example.com/token")
+    monkeypatch.setenv("IGDB__REFRESH_MARGIN_SECONDS", "30")
     monkeypatch.setenv("DISCORD__WEBHOOK_URL", "https://example.com/webhook")
     monkeypatch.setenv("GEMINI__API_KEY", "gkey")
     monkeypatch.setenv("GEMINI__MODEL", "embed-002")
 
     settings = get_settings()
 
-    assert settings.igdb.app_access_token.get_secret_value() == "app-token"
+    assert str(settings.igdb.token_url) == "https://auth.example.com/token"
+    assert settings.igdb.refresh_margin_seconds == 30

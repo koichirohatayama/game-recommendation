@@ -5,8 +5,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Protocol
 
+import httpx
 from igdb.wrapper import IGDBWrapper
 from requests import HTTPError
 
@@ -34,6 +36,82 @@ class IGDBRetryConfig:
     max_attempts: int = 3
     backoff_factor: float = 0.5
     retriable_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
+
+
+@dataclass(slots=True, frozen=True)
+class IGDBAccessToken:
+    """IGDB API へアクセスするためのアクセストークン。"""
+
+    access_token: str
+    expires_at: datetime | None
+
+
+class TwitchOAuthClient:
+    """Twitch OAuth2 (client credentials) でアクセストークンを取得するクライアント。"""
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        token_url: str,
+        http_post: Callable[..., httpx.Response] = httpx.post,
+    ) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._token_url = token_url
+        self._http_post = http_post
+
+    def fetch_app_access_token(self) -> IGDBAccessToken:
+        response = self._http_post(
+            self._token_url,
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "grant_type": "client_credentials",
+            },
+            headers={"Accept": "application/json"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        access_token = payload["access_token"]
+        expires_in = payload.get("expires_in")
+        expires_at = (
+            datetime.now(datetime.UTC) + timedelta(seconds=int(expires_in))
+            if isinstance(expires_in, (int, float))
+            else None
+        )
+        return IGDBAccessToken(access_token=access_token, expires_at=expires_at)
+
+
+class IGDBAccessTokenProvider:
+    """アクセストークンのキャッシュと有効期限管理を行うプロバイダー。"""
+
+    def __init__(
+        self,
+        *,
+        oauth_client: TwitchOAuthClient,
+        refresh_margin: timedelta,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._oauth_client = oauth_client
+        self._refresh_margin = refresh_margin
+        self._clock = clock or (lambda: datetime.now(datetime.UTC))
+        self._cached_token: IGDBAccessToken | None = None
+
+    def get_token(self) -> IGDBAccessToken:
+        now = self._clock()
+        if self._cached_token and not self._should_refresh(self._cached_token, now):
+            return self._cached_token
+
+        self._cached_token = self._oauth_client.fetch_app_access_token()
+        return self._cached_token
+
+    def _should_refresh(self, token: IGDBAccessToken, now: datetime) -> bool:
+        if token.expires_at is None:
+            return False
+        return token.expires_at - self._refresh_margin <= now
 
 
 @dataclass(slots=True, frozen=True)
@@ -156,13 +234,17 @@ class IGDBClient(IGDBClientProtocol):
         self,
         *,
         client_id: str,
-        app_token: str,
+        token_provider: IGDBAccessTokenProvider,
         retry_config: IGDBRetryConfig | None = None,
         logger=None,
         wrapper_factory: Callable[[str, str], IGDBWrapperProtocol] | None = None,
         sleep_func: Callable[[float], None] = time.sleep,
     ) -> None:
-        self._wrapper = (wrapper_factory or IGDBWrapper)(client_id, app_token)
+        self._client_id = client_id
+        self._token_provider = token_provider
+        self._wrapper_factory = wrapper_factory or IGDBWrapper
+        self._wrapper: IGDBWrapperProtocol | None = None
+        self._cached_token_value: str | None = None
         self._retry_config = retry_config or IGDBRetryConfig()
         self._sleep = sleep_func
         self._logger = logger or get_logger(__name__)
@@ -203,7 +285,8 @@ class IGDBClient(IGDBClientProtocol):
                     attempt=attempt,
                     format=response_format.value,
                 )
-                return self._wrapper.api_request(endpoint, compiled_query)
+                wrapper = self._get_wrapper()
+                return wrapper.api_request(endpoint, compiled_query)
             except HTTPError as exc:
                 status_code = exc.response.status_code if exc.response is not None else None
                 if not self._should_retry(status_code, attempt):
@@ -227,6 +310,13 @@ class IGDBClient(IGDBClientProtocol):
             return True
         return status_code in self._retry_config.retriable_statuses
 
+    def _get_wrapper(self) -> IGDBWrapperProtocol:
+        token = self._token_provider.get_token()
+        if self._wrapper is None or token.access_token != self._cached_token_value:
+            self._wrapper = self._wrapper_factory(self._client_id, token.access_token)
+            self._cached_token_value = token.access_token
+        return self._wrapper
+
 
 def build_igdb_client(
     *,
@@ -238,16 +328,26 @@ def build_igdb_client(
 
     app_settings = settings or get_settings()
     igdb_settings = app_settings.igdb
-    token = igdb_settings.app_access_token or igdb_settings.client_secret
+    oauth_client = TwitchOAuthClient(
+        client_id=igdb_settings.client_id,
+        client_secret=igdb_settings.client_secret.get_secret_value(),
+        token_url=str(igdb_settings.token_url),
+    )
+    token_provider = IGDBAccessTokenProvider(
+        oauth_client=oauth_client,
+        refresh_margin=timedelta(seconds=igdb_settings.refresh_margin_seconds),
+    )
     return IGDBClient(
         client_id=igdb_settings.client_id,
-        app_token=token.get_secret_value(),
+        token_provider=token_provider,
         retry_config=retry_config,
         logger=logger,
     )
 
 
 __all__ = [
+    "IGDBAccessToken",
+    "IGDBAccessTokenProvider",
     "IGDBClient",
     "IGDBClientError",
     "IGDBClientProtocol",
@@ -258,5 +358,6 @@ __all__ = [
     "IGDBResponseFormat",
     "IGDBRetryConfig",
     "IGDBWrapperProtocol",
+    "TwitchOAuthClient",
     "build_igdb_client",
 ]

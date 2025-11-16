@@ -12,6 +12,7 @@ from igdb.igdbapi_pb2 import GameResult
 from requests import HTTPError, Response
 
 from game_recommendation.infra.igdb import (
+    IGDBAccessToken,
     IGDBClient,
     IGDBQueryBuilder,
     IGDBRateLimitError,
@@ -46,9 +47,17 @@ def _http_error(status: int) -> HTTPError:
 
 
 def _build_client(actions: list[Any], **kwargs: Any) -> IGDBClient:
+    class StubTokenProvider:
+        def __init__(self, token: str = "token") -> None:
+            self.token = token
+
+        def get_token(self) -> IGDBAccessToken:
+            return IGDBAccessToken(access_token=self.token, expires_at=None)
+
+    token_provider = kwargs.pop("token_provider", StubTokenProvider())
     return IGDBClient(
         client_id="cid",
-        app_token="token",
+        token_provider=token_provider,
         wrapper_factory=lambda *_: StubWrapper(actions),
         **kwargs,
     )
