@@ -112,7 +112,8 @@ class GameEmbedding(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     game_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     dimension: Mapped[int] = mapped_column(Integer, nullable=False)
-    embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    title_embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    description_embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     embedding_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSON, nullable=False, default=dict
     )

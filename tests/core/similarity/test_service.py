@@ -43,7 +43,8 @@ def _build_search_result(
     return GameEmbeddingSearchResult(
         game_id=game_id,
         dimension=2,
-        embedding=(0.1, 0.2),
+        title_embedding=(0.1, 0.2),
+        description_embedding=(0.1, 0.2),
         metadata=metadata,
         created_at=now,
         updated_at=now,

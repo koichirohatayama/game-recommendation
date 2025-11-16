@@ -21,6 +21,8 @@ from game_recommendation.shared.config import (
     StorageSettings,
 )
 
+DIMENSION = 768
+
 
 @pytest.fixture()
 def app_settings(tmp_path: Path) -> AppSettings:
@@ -52,9 +54,14 @@ def connection_manager(
 def repository(connection_manager: SQLiteVecConnectionManager) -> SQLiteVecEmbeddingRepository:
     return SQLiteVecEmbeddingRepository(
         connection_manager,
-        dimension=3,
+        dimension=DIMENSION,
         enable_vec_index=True,
     )
+
+
+def _make_vector(seed: float) -> tuple[float, ...]:
+    base = [seed + (i % 5) * 0.001 for i in range(DIMENSION)]
+    return tuple(base)
 
 
 def test_upsert_and_get_embedding_roundtrip(
@@ -62,7 +69,8 @@ def test_upsert_and_get_embedding_roundtrip(
 ) -> None:
     payload = GameEmbeddingPayload(
         game_id="game-1",
-        embedding=(0.1, 0.2, 0.3),
+        title_embedding=_make_vector(0.1),
+        description_embedding=_make_vector(0.2),
         metadata={"title": "Demo"},
     )
 
@@ -71,15 +79,18 @@ def test_upsert_and_get_embedding_roundtrip(
     assert reloaded is not None
 
     assert inserted.game_id == "game-1"
-    assert inserted.embedding == pytest.approx(payload.embedding)
-    assert inserted.dimension == 3
-    assert reloaded.embedding == pytest.approx(payload.embedding)
+    assert inserted.title_embedding == pytest.approx(payload.title_embedding)
+    assert inserted.description_embedding == pytest.approx(payload.description_embedding)
+    assert inserted.dimension == DIMENSION
+    assert reloaded.title_embedding == pytest.approx(payload.title_embedding)
+    assert reloaded.description_embedding == pytest.approx(payload.description_embedding)
     assert reloaded.metadata["title"] == "Demo"
 
     updated = repository.upsert_embedding(
         GameEmbeddingPayload(
             game_id="game-1",
-            embedding=(0.12, 0.25, 0.33),
+            title_embedding=_make_vector(0.12),
+            description_embedding=_make_vector(0.25),
             metadata={"title": "Updated"},
         )
     )
@@ -96,23 +107,26 @@ def test_search_similar_falls_back_to_python_distance(
         (
             GameEmbeddingPayload(
                 game_id="a",
-                embedding=(0.1, 0.0, 0.0),
+                title_embedding=_make_vector(0.1),
+                description_embedding=_make_vector(0.0),
                 metadata={"title": "A"},
             ),
             GameEmbeddingPayload(
                 game_id="b",
-                embedding=(0.1, 0.2, 0.3),
+                title_embedding=_make_vector(0.2),
+                description_embedding=_make_vector(0.2),
                 metadata={"title": "B"},
             ),
             GameEmbeddingPayload(
                 game_id="c",
-                embedding=(0.5, 0.5, 0.5),
+                title_embedding=_make_vector(0.5),
+                description_embedding=_make_vector(0.5),
                 metadata={"title": "C"},
             ),
         ),
     )
 
-    results = repository.search_similar((0.1, 0.2, 0.3), limit=2)
+    results = repository.search_similar(_make_vector(0.2), limit=2)
 
     assert len(results) == 2
     assert results[0].game_id == "b"
@@ -128,12 +142,14 @@ def test_seed_embeddings_helper_returns_records(
         (
             GameEmbeddingPayload(
                 game_id="seed-1",
-                embedding=(0.0, 0.4, 0.9),
+                title_embedding=_make_vector(0.0),
+                description_embedding=_make_vector(0.4),
                 metadata={"genre": "RPG"},
             ),
             GameEmbeddingPayload(
                 game_id="seed-2",
-                embedding=(0.1, 0.1, 0.1),
+                title_embedding=_make_vector(0.1),
+                description_embedding=_make_vector(0.1),
                 metadata={"genre": "ARPG"},
             ),
         ),

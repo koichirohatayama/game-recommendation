@@ -49,14 +49,20 @@ class GameEmbeddingPayload(DTO):
     """埋め込み保存時に利用する入力 DTO。"""
 
     game_id: str
-    embedding: tuple[float, ...]
+    title_embedding: tuple[float, ...]
+    description_embedding: tuple[float, ...]
     metadata: dict[str, Any]
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
-            "embedding",
-            tuple(float(value) for value in self.embedding),
+            "title_embedding",
+            tuple(float(value) for value in self.title_embedding),
+        )
+        object.__setattr__(
+            self,
+            "description_embedding",
+            tuple(float(value) for value in self.description_embedding),
         )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -67,13 +73,15 @@ class GameEmbeddingRecord(DTO):
 
     game_id: str
     dimension: int
-    embedding: tuple[float, ...]
+    title_embedding: tuple[float, ...]
+    description_embedding: tuple[float, ...]
     metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "embedding", tuple(self.embedding))
+        object.__setattr__(self, "title_embedding", tuple(self.title_embedding))
+        object.__setattr__(self, "description_embedding", tuple(self.description_embedding))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -228,7 +236,7 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         self,
         manager: SQLiteVecConnectionManager,
         *,
-        dimension: int,
+        dimension: int = 768,
         enable_vec_index: bool = True,
         distance_metric: DistanceMetric = "cosine",
         logger: BoundLogger | None = None,
@@ -242,17 +250,19 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         if enable_vec_index:
             self._vec_index_ready = self._manager.ensure_vec_index(
                 table_name=self.VEC_TABLE_NAME,
-                column="embedding",
+                column="description_embedding",
                 dimension=dimension,
             )
 
     def upsert_embedding(self, payload: GameEmbeddingPayload) -> GameEmbeddingRecord:
-        normalized = _normalize_embedding(payload.embedding)
-        if len(normalized) != self._dimension:
+        title_vec = _normalize_embedding(payload.title_embedding)
+        desc_vec = _normalize_embedding(payload.description_embedding)
+        if len(title_vec) != self._dimension or len(desc_vec) != self._dimension:
             msg = "Embedding dimension mismatch"
             raise SQLiteVecError(msg)
 
-        blob = _embedding_to_blob(normalized)
+        title_blob = _embedding_to_blob(title_vec)
+        desc_blob = _embedding_to_blob(desc_vec)
         now = datetime.utcnow()
 
         with self._manager.transaction() as session:
@@ -264,7 +274,8 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
                 model = GameEmbedding(
                     game_id=payload.game_id,
                     dimension=self._dimension,
-                    embedding=blob,
+                    title_embedding=title_blob,
+                    description_embedding=desc_blob,
                     embedding_metadata=payload.metadata,
                     created_at=now,
                     updated_at=now,
@@ -273,14 +284,15 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
                 session.flush()
             else:
                 existing.dimension = self._dimension
-                existing.embedding = blob
+                existing.title_embedding = title_blob
+                existing.description_embedding = desc_blob
                 existing.embedding_metadata = payload.metadata
                 existing.updated_at = now
                 model = existing
                 session.flush()
 
             if self._vec_index_ready and model.id is not None:
-                self._vec_index_ready = self._sync_vec_index(session, model.id, normalized)
+                self._vec_index_ready = self._sync_vec_index(session, model.id, desc_vec)
 
             session.refresh(model)
 
@@ -327,11 +339,12 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
                 session.execute(
                     text(
                         f"""
-                        SELECT ge.game_id, ge.dimension, ge.embedding, ge.metadata,
+                        SELECT ge.game_id, ge.dimension,
+                               ge.title_embedding, ge.description_embedding, ge.metadata,
                                ge.created_at, ge.updated_at, vec.distance
                         FROM {self.VEC_TABLE_NAME} AS vec
                         JOIN {self.TABLE_NAME} AS ge ON ge.id = vec.rowid
-                        WHERE vec.embedding MATCH :query
+                        WHERE vec.description_embedding MATCH :query
                         ORDER BY vec.distance
                         LIMIT :limit
                         """
@@ -362,7 +375,7 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         results: list[GameEmbeddingSearchResult] = []
         for record in records:
             distance = _calculate_distance(
-                record.embedding,
+                record.description_embedding,
                 embedding,
                 metric=self._distance_metric,
             )
@@ -385,7 +398,7 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
             )
             session.execute(
                 text(
-                    f"INSERT INTO {self.VEC_TABLE_NAME}(rowid, embedding) "
+                    f"INSERT INTO {self.VEC_TABLE_NAME}(rowid, description_embedding) "
                     "VALUES (:row_id, :embedding)"
                 ),
                 {"row_id": row_id, "embedding": vector},
@@ -400,7 +413,8 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         return GameEmbeddingRecord(
             game_id=model.game_id,
             dimension=model.dimension,
-            embedding=_blob_to_embedding(model.embedding, model.dimension),
+            title_embedding=_blob_to_embedding(model.title_embedding, model.dimension),
+            description_embedding=_blob_to_embedding(model.description_embedding, model.dimension),
             metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
             created_at=_coerce_datetime(model.created_at),
             updated_at=_coerce_datetime(model.updated_at),
@@ -409,11 +423,13 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
     def _row_to_search_result(self, row: Any) -> GameEmbeddingSearchResult:
         mapping = row if isinstance(row, dict) else row._mapping  # type: ignore[attr-defined]
         metadata = mapping.get("metadata") or {}
-        embedding_blob = mapping["embedding"]
+        title_blob = mapping["title_embedding"]
+        desc_blob = mapping["description_embedding"]
         return GameEmbeddingSearchResult(
             game_id=mapping["game_id"],
             dimension=mapping["dimension"],
-            embedding=_blob_to_embedding(embedding_blob, mapping["dimension"]),
+            title_embedding=_blob_to_embedding(title_blob, mapping["dimension"]),
+            description_embedding=_blob_to_embedding(desc_blob, mapping["dimension"]),
             metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
             created_at=_coerce_datetime(mapping["created_at"]),
             updated_at=_coerce_datetime(mapping["updated_at"]),
