@@ -50,17 +50,18 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
-    with connectable.connect() as connection:
+    # NOTE:
+    # SQLite の DDL は暗黙にオートコミットされるが、DML（alembic_version の更新など）は
+    # 明示的にトランザクションを張らないとクローズ時にロールバックされてしまう。
+    # そのため connect ではなく begin() で接続し、トランザクションを確実にコミットする。
+    with connectable.begin() as connection:
         connection.execute(text("PRAGMA foreign_keys=ON"))
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,
         )
-
-        with context.begin_transaction():
-            context.run_migrations()
+        context.run_migrations()
 
 
 if context.is_offline_mode():
