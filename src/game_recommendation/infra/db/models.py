@@ -52,10 +52,19 @@ class GameTag(Base):
     __tablename__ = "game_tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    slug: Mapped[str] = mapped_column(String, nullable=False)
     label: Mapped[str] = mapped_column(String, nullable=False)
+    tag_class: Mapped[str] = mapped_column(String, nullable=False)
+    igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("slug", "tag_class", name="uq_game_tags_slug_class"),
+        UniqueConstraint("igdb_id", "tag_class", name="uq_game_tags_igdb_id_class"),
+        Index("idx_game_tags_igdb_id", "igdb_id"),
+        Index("idx_game_tags_tag_class", "tag_class"),
     )
 
 
