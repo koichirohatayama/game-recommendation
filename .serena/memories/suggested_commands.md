@@ -5,3 +5,4 @@
 - `uv run pytest` – テストスイート実行。
 - `uv run game-reco ...` – typer ベース CLI エントリ（game_recommendation.cli.app:main）を起動。
 - `uv run streamlit run src/game_recommendation/web/app.py` – Streamlit ダッシュボード起動（app.py などエントリを実装後）。
+- `scripts/migrate.sh` – Alembic でスキーマを適用（デフォルト head）。`scripts/migrate.sh <revision>` で指定リビジョンへ。デフォルトの接続先は `alembic.ini` の `sqlalchemy.url`（sqlite:///./var/game_recommendation.db）。

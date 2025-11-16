@@ -1,4 +1,4 @@
-"""sqlite-vec を利用した SQLite リポジトリの骨組み実装。"""
+"""sqlite-vec を SQLAlchemy ベースで扱う埋め込み DAO。"""
 
 from __future__ import annotations
 
@@ -12,11 +12,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
 from typing import Any, Literal
 
 import structlog
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import Engine, event, select, text
+from sqlalchemy.engine import URL, create_engine
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session, sessionmaker
 
+from game_recommendation.infra.db.models import GameEmbedding
 from game_recommendation.shared.config import AppSettings, get_settings
 from game_recommendation.shared.exceptions import BaseAppError
 from game_recommendation.shared.logging import get_logger
@@ -97,9 +103,10 @@ class EmbeddingRepository(ABC):
 
 
 class SQLiteVecConnectionManager:
-    """sqlite3 接続を管理し、vec 拡張のロードを担う。"""
+    """SQLAlchemy エンジンを管理し、sqlite-vec 拡張のロードも担う。"""
 
-    _MIGRATIONS_DIR = Path(__file__).with_name("migrations")
+    _ALEMBIC_CONFIG = Path(__file__).resolve().parents[4] / "alembic.ini"
+    _ALEMBIC_SCRIPT_DIR = Path(__file__).parent / "alembic"
 
     def __init__(
         self,
@@ -118,35 +125,44 @@ class SQLiteVecConnectionManager:
         self._load_extension = load_extension
         self._extension_path = extension_path
         self._logger = logger or get_logger(__name__, component="sqlite-vec")
-        self._lock = Lock()
-        self._connection: sqlite3.Connection | None = None
-        self._extension_loaded = False
+
+        self._engine = self._create_engine()
+        self._session_factory = sessionmaker(
+            self._engine,
+            autoflush=False,
+            expire_on_commit=False,
+            future=True,
+        )
+
+    @property
+    def url(self) -> str:
+        return str(URL.create("sqlite", database=str(self._db_path)))
+
+    @property
+    def engine(self) -> Engine:
+        return self._engine
 
     @contextmanager
-    def connection(self) -> Iterator[sqlite3.Connection]:
-        conn = self._ensure_connection()
-        try:
-            yield conn
-        finally:
-            pass
+    def session(self) -> Iterator[Session]:
+        with self._session_factory() as session:
+            yield session
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
-        conn = self._ensure_connection()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:  # pragma: no cover - 例外伝搬を維持
-            conn.rollback()
-            raise
+    def transaction(self) -> Iterator[Session]:
+        with self._session_factory.begin() as session:
+            yield session
 
-    def initialize_schema(self) -> None:
-        """migrations ディレクトリにある SQL を順番に実行する。"""
+    def initialize_schema(self, revision: str = "head") -> None:
+        """Alembic を使ってスキーマを最新化。"""
 
-        with self.connection() as conn:
-            for script in self._iter_migrations():
-                conn.executescript(script)
-            conn.commit()
+        if not self._ALEMBIC_CONFIG.exists():
+            msg = f"Alembic config not found: {self._ALEMBIC_CONFIG}"
+            raise SQLiteVecError(msg)
+
+        config = Config(str(self._ALEMBIC_CONFIG))
+        config.set_main_option("script_location", str(self._ALEMBIC_SCRIPT_DIR))
+        config.set_main_option("sqlalchemy.url", self.url)
+        command.upgrade(config, revision)
 
     def ensure_vec_index(self, *, table_name: str, column: str, dimension: int) -> bool:
         """vec0 仮想テーブルを生成し、利用可能かを返す。"""
@@ -156,55 +172,43 @@ class SQLiteVecConnectionManager:
             f"USING vec0({column} FLOAT[{dimension}])"
         )
         try:
-            with self.connection() as conn:
-                conn.execute(ddl)
-                conn.commit()
-        except sqlite3.OperationalError as exc:
+            with self.engine.begin() as conn:
+                conn.execute(text(ddl))
+        except OperationalError as exc:
             self._logger.warning("sqlite_vec.vec_table_init_failed", error=str(exc))
             return False
         return True
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-        self._connection = None
+        self._engine.dispose()
 
-    def _ensure_connection(self) -> sqlite3.Connection:
-        with self._lock:
-            if self._connection is not None:
-                return self._connection
+    def _create_engine(self) -> Engine:
+        engine = create_engine(self.url, future=True)
+        event.listen(engine, "connect", self._on_connect)
+        return engine
 
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON;")
+    def _on_connect(
+        self, dbapi_conn: sqlite3.Connection, _
+    ) -> None:  # pragma: no cover - DBAPI hook
+        dbapi_conn.execute("PRAGMA foreign_keys = ON;")
 
-            if self._load_extension:
-                self._extension_loaded = self._load_vec_extension(conn)
+        if not self._load_extension:
+            return
 
-            self._connection = conn
-            return conn
-
-    def _iter_migrations(self) -> Iterator[str]:
-        for sql_file in sorted(self._MIGRATIONS_DIR.glob("*.sql")):
-            yield sql_file.read_text(encoding="utf-8")
-
-    def _load_vec_extension(self, conn: sqlite3.Connection) -> bool:
         path = self._resolve_extension_path()
         if path is None:
             self._logger.warning("sqlite_vec.extension_missing")
-            return False
+            return
 
         try:
-            conn.enable_load_extension(True)
-            conn.load_extension(str(path))
+            dbapi_conn.enable_load_extension(True)
+            dbapi_conn.load_extension(str(path))
         except sqlite3.OperationalError as exc:
             self._logger.warning("sqlite_vec.extension_load_failed", error=str(exc))
-            return False
+        else:
+            self._logger.info("sqlite_vec.extension_loaded", path=str(path))
         finally:
-            conn.enable_load_extension(False)
-
-        self._logger.info("sqlite_vec.extension_loaded", path=str(path))
-        return True
+            dbapi_conn.enable_load_extension(False)
 
     def _resolve_extension_path(self) -> Path | None:
         if self._extension_path is not None:
@@ -249,49 +253,48 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
             raise SQLiteVecError(msg)
 
         blob = _embedding_to_blob(normalized)
-        metadata_json = json.dumps(payload.metadata, ensure_ascii=False)
+        now = datetime.utcnow()
 
-        with self._manager.transaction() as conn:
-            conn.execute(
-                f"""
-                INSERT INTO {self.TABLE_NAME} (game_id, dimension, embedding, metadata)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(game_id) DO UPDATE SET
-                    dimension=excluded.dimension,
-                    embedding=excluded.embedding,
-                    metadata=excluded.metadata,
-                    updated_at=CURRENT_TIMESTAMP
-                """,
-                (payload.game_id, self._dimension, blob, metadata_json),
-            )
-            if self._vec_index_ready:
-                self._sync_vec_index(conn, payload.game_id, normalized)
+        with self._manager.transaction() as session:
+            existing = session.execute(
+                select(GameEmbedding).where(GameEmbedding.game_id == payload.game_id)
+            ).scalar_one_or_none()
 
-            row = conn.execute(
-                f"""
-                SELECT game_id, dimension, embedding, metadata, created_at, updated_at
-                FROM {self.TABLE_NAME}
-                WHERE game_id = ?
-                """,
-                (payload.game_id,),
-            ).fetchone()
+            if existing is None:
+                model = GameEmbedding(
+                    game_id=payload.game_id,
+                    dimension=self._dimension,
+                    embedding=blob,
+                    embedding_metadata=payload.metadata,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(model)
+                session.flush()
+            else:
+                existing.dimension = self._dimension
+                existing.embedding = blob
+                existing.embedding_metadata = payload.metadata
+                existing.updated_at = now
+                model = existing
+                session.flush()
 
-        return self._row_to_record(row)
+            if self._vec_index_ready and model.id is not None:
+                self._vec_index_ready = self._sync_vec_index(session, model.id, normalized)
+
+            session.refresh(model)
+
+        return self._model_to_record(model)
 
     def get_embedding(self, game_id: str) -> GameEmbeddingRecord | None:
-        with self._manager.connection() as conn:
-            row = conn.execute(
-                f"""
-                SELECT game_id, dimension, embedding, metadata, created_at, updated_at
-                FROM {self.TABLE_NAME}
-                WHERE game_id = ?
-                """,
-                (game_id,),
-            ).fetchone()
+        with self._manager.session() as session:
+            model = session.execute(
+                select(GameEmbedding).where(GameEmbedding.game_id == game_id)
+            ).scalar_one_or_none()
 
-        if row is None:
+        if model is None:
             return None
-        return self._row_to_record(row)
+        return self._model_to_record(model)
 
     def search_similar(
         self,
@@ -307,7 +310,7 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         if self._vec_index_ready:
             try:
                 return self._search_with_vec_index(normalized, limit)
-            except sqlite3.OperationalError as exc:
+            except OperationalError as exc:
                 self._logger.warning("sqlite_vec.query_failed", error=str(exc))
                 self._vec_index_ready = False
 
@@ -319,19 +322,25 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         limit: int,
     ) -> list[GameEmbeddingSearchResult]:
         query_vector = json.dumps(embedding)
-        with self._manager.connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT ge.game_id, ge.dimension, ge.embedding, ge.metadata,
-                       ge.created_at, ge.updated_at, vec.distance
-                FROM {self.VEC_TABLE_NAME} AS vec
-                JOIN {self.TABLE_NAME} AS ge ON ge.id = vec.rowid
-                WHERE vec.embedding MATCH ?
-                ORDER BY vec.distance
-                LIMIT ?
-                """,
-                (query_vector, limit),
-            ).fetchall()
+        with self._manager.session() as session:
+            rows = (
+                session.execute(
+                    text(
+                        f"""
+                        SELECT ge.game_id, ge.dimension, ge.embedding, ge.metadata,
+                               ge.created_at, ge.updated_at, vec.distance
+                        FROM {self.VEC_TABLE_NAME} AS vec
+                        JOIN {self.TABLE_NAME} AS ge ON ge.id = vec.rowid
+                        WHERE vec.embedding MATCH :query
+                        ORDER BY vec.distance
+                        LIMIT :limit
+                        """
+                    ),
+                    {"query": query_vector, "limit": limit},
+                )
+                .mappings()
+                .all()
+            )
 
         return [self._row_to_search_result(row) for row in rows]
 
@@ -340,17 +349,16 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         embedding: tuple[float, ...],
         limit: int,
     ) -> list[GameEmbeddingSearchResult]:
-        with self._manager.connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT game_id, dimension, embedding, metadata, created_at, updated_at
-                FROM {self.TABLE_NAME}
-                WHERE dimension = ?
-                """,
-                (self._dimension,),
-            ).fetchall()
+        with self._manager.session() as session:
+            models = (
+                session.execute(
+                    select(GameEmbedding).where(GameEmbedding.dimension == self._dimension)
+                )
+                .scalars()
+                .all()
+            )
 
-        records = [self._row_to_record(row) for row in rows]
+        records = [self._model_to_record(model) for model in models]
         results: list[GameEmbeddingSearchResult] = []
         for record in records:
             distance = _calculate_distance(
@@ -365,44 +373,52 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
 
     def _sync_vec_index(
         self,
-        conn: sqlite3.Connection,
-        game_id: str,
+        session: Session,
+        row_id: int,
         embedding: tuple[float, ...],
-    ) -> None:
-        row = conn.execute(
-            f"SELECT id FROM {self.TABLE_NAME} WHERE game_id = ?",
-            (game_id,),
-        ).fetchone()
-        if row is None:
-            return
-        row_id = row["id"]
+    ) -> bool:
         vector = json.dumps(embedding)
-        conn.execute(
-            f"DELETE FROM {self.VEC_TABLE_NAME} WHERE rowid = ?",
-            (row_id,),
-        )
-        conn.execute(
-            f"INSERT INTO {self.VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)",
-            (row_id, vector),
-        )
+        try:
+            session.execute(
+                text(f"DELETE FROM {self.VEC_TABLE_NAME} WHERE rowid = :row_id"),
+                {"row_id": row_id},
+            )
+            session.execute(
+                text(
+                    f"INSERT INTO {self.VEC_TABLE_NAME}(rowid, embedding) "
+                    "VALUES (:row_id, :embedding)"
+                ),
+                {"row_id": row_id, "embedding": vector},
+            )
+        except OperationalError as exc:
+            self._logger.warning("sqlite_vec.query_failed", error=str(exc))
+            return False
+        return True
 
-    def _row_to_record(self, row: sqlite3.Row | None) -> GameEmbeddingRecord:
-        if row is None:
-            msg = "Row is required to build DTO"
-            raise SQLiteVecError(msg)
-
+    def _model_to_record(self, model: GameEmbedding) -> GameEmbeddingRecord:
+        metadata = model.embedding_metadata or {}
         return GameEmbeddingRecord(
-            game_id=row["game_id"],
-            dimension=row["dimension"],
-            embedding=_blob_to_embedding(row["embedding"], row["dimension"]),
-            metadata=json.loads(row["metadata"]),
-            created_at=_parse_timestamp(row["created_at"]),
-            updated_at=_parse_timestamp(row["updated_at"]),
+            game_id=model.game_id,
+            dimension=model.dimension,
+            embedding=_blob_to_embedding(model.embedding, model.dimension),
+            metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
+            created_at=_coerce_datetime(model.created_at),
+            updated_at=_coerce_datetime(model.updated_at),
         )
 
-    def _row_to_search_result(self, row: sqlite3.Row) -> GameEmbeddingSearchResult:
-        record = self._row_to_record(row)
-        return GameEmbeddingSearchResult(distance=row["distance"], **record.to_dict())
+    def _row_to_search_result(self, row: Any) -> GameEmbeddingSearchResult:
+        mapping = row if isinstance(row, dict) else row._mapping  # type: ignore[attr-defined]
+        metadata = mapping.get("metadata") or {}
+        embedding_blob = mapping["embedding"]
+        return GameEmbeddingSearchResult(
+            game_id=mapping["game_id"],
+            dimension=mapping["dimension"],
+            embedding=_blob_to_embedding(embedding_blob, mapping["dimension"]),
+            metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
+            created_at=_coerce_datetime(mapping["created_at"]),
+            updated_at=_coerce_datetime(mapping["updated_at"]),
+            distance=float(mapping["distance"]),
+        )
 
 
 def seed_embeddings(
@@ -428,45 +444,43 @@ def _embedding_to_blob(values: Sequence[float]) -> bytes:
 
 def _blob_to_embedding(blob: bytes, dimension: int) -> tuple[float, ...]:
     buf = array("f")
-    buf.frombytes(blob)
+    buf.frombytes(bytes(blob))
     if len(buf) != dimension:
         raise SQLiteVecError("Stored embedding dimension mismatch")
     return tuple(float(value) for value in buf)
 
 
 def _calculate_distance(
-    left: Sequence[float],
-    right: Sequence[float],
+    x: Sequence[float],
+    y: Sequence[float],
     *,
     metric: DistanceMetric,
 ) -> float:
-    if len(left) != len(right):
-        msg = "Cannot compute distance for mismatched dimensions"
-        raise SQLiteVecError(msg)
     if metric == "l2":
-        return math.sqrt(sum((a - b) ** 2 for a, b in zip(left, right, strict=True)))
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(x, y, strict=True)))
 
-    dot = sum(a * b for a, b in zip(left, right, strict=True))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    denom = left_norm * right_norm
-    if denom == 0:
-        return 1.0
-    cosine = dot / denom
-    return 1.0 - cosine
+    dot = sum(a * b for a, b in zip(x, y, strict=True))
+    norm_x = math.sqrt(sum(a * a for a in x))
+    norm_y = math.sqrt(sum(b * b for b in y))
+    if norm_x == 0 or norm_y == 0:  # pragma: no cover - 無限大の扱いは想定外
+        return float("inf")
+    cosine_similarity = dot / (norm_x * norm_y)
+    return 1 - cosine_similarity
 
 
-def _parse_timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value)
+def _coerce_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    return datetime.fromisoformat(str(value))
 
 
 __all__ = [
-    "SQLiteVecConnectionManager",
-    "SQLiteVecEmbeddingRepository",
+    "EmbeddingRepository",
     "GameEmbeddingPayload",
     "GameEmbeddingRecord",
     "GameEmbeddingSearchResult",
-    "EmbeddingRepository",
-    "seed_embeddings",
+    "SQLiteVecConnectionManager",
+    "SQLiteVecEmbeddingRepository",
     "SQLiteVecError",
+    "seed_embeddings",
 ]
