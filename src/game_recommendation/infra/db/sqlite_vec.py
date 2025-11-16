@@ -7,24 +7,20 @@ import math
 import sqlite3
 from abc import ABC, abstractmethod
 from array import array
-from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 import structlog
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Engine, event, select, text
-from sqlalchemy.engine import URL, create_engine
+from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from game_recommendation.infra.db.models import GameEmbedding
-from game_recommendation.shared.config import AppSettings, get_settings
-from game_recommendation.shared.exceptions import BaseAppError
+from game_recommendation.infra.db.session import DatabaseError, DatabaseSessionManager
+from game_recommendation.shared.config import AppSettings
 from game_recommendation.shared.logging import get_logger
 from game_recommendation.shared.types import DTO
 
@@ -38,7 +34,7 @@ BoundLogger = structlog.stdlib.BoundLogger
 DistanceMetric = Literal["cosine", "l2"]
 
 
-class SQLiteVecError(BaseAppError):
+class SQLiteVecError(DatabaseError):
     """sqlite-vec に関するエラー。"""
 
     default_message = "SQLite-vec operation failed"
@@ -110,11 +106,8 @@ class EmbeddingRepository(ABC):
     ) -> list[GameEmbeddingSearchResult]: ...
 
 
-class SQLiteVecConnectionManager:
+class SQLiteVecConnectionManager(DatabaseSessionManager):
     """SQLAlchemy エンジンを管理し、sqlite-vec 拡張のロードも担う。"""
-
-    _ALEMBIC_CONFIG = Path(__file__).resolve().parents[4] / "alembic.ini"
-    _ALEMBIC_SCRIPT_DIR = Path(__file__).parent / "alembic"
 
     def __init__(
         self,
@@ -125,52 +118,16 @@ class SQLiteVecConnectionManager:
         extension_path: Path | None = None,
         logger: BoundLogger | None = None,
     ) -> None:
-        self._settings = settings or get_settings()
-        resolved_path = db_path or self._settings.storage.sqlite_path
-        self._db_path = Path(resolved_path).expanduser()
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-
         self._load_extension = load_extension
         self._extension_path = extension_path
         self._logger = logger or get_logger(__name__, component="sqlite-vec")
-
-        self._engine = self._create_engine()
-        self._session_factory = sessionmaker(
-            self._engine,
-            autoflush=False,
-            expire_on_commit=False,
-            future=True,
-        )
-
-    @property
-    def url(self) -> str:
-        return str(URL.create("sqlite", database=str(self._db_path)))
-
-    @property
-    def engine(self) -> Engine:
-        return self._engine
-
-    @contextmanager
-    def session(self) -> Iterator[Session]:
-        with self._session_factory() as session:
-            yield session
-
-    @contextmanager
-    def transaction(self) -> Iterator[Session]:
-        with self._session_factory.begin() as session:
-            yield session
+        super().__init__(db_path=db_path, settings=settings, logger=self._logger)
 
     def initialize_schema(self, revision: str = "head") -> None:
-        """Alembic を使ってスキーマを最新化。"""
-
-        if not self._ALEMBIC_CONFIG.exists():
-            msg = f"Alembic config not found: {self._ALEMBIC_CONFIG}"
-            raise SQLiteVecError(msg)
-
-        config = Config(str(self._ALEMBIC_CONFIG))
-        config.set_main_option("script_location", str(self._ALEMBIC_SCRIPT_DIR))
-        config.set_main_option("sqlalchemy.url", self.url)
-        command.upgrade(config, revision)
+        try:
+            super().initialize_schema(revision)
+        except DatabaseError as exc:
+            raise SQLiteVecError(str(exc)) from exc
 
     def ensure_vec_index(self, *, table_name: str, column: str, dimension: int) -> bool:
         """vec0 仮想テーブルを生成し、利用可能かを返す。"""
@@ -187,18 +144,10 @@ class SQLiteVecConnectionManager:
             return False
         return True
 
-    def close(self) -> None:
-        self._engine.dispose()
-
-    def _create_engine(self) -> Engine:
-        engine = create_engine(self.url, future=True)
-        event.listen(engine, "connect", self._on_connect)
-        return engine
-
     def _on_connect(
         self, dbapi_conn: sqlite3.Connection, _
     ) -> None:  # pragma: no cover - DBAPI hook
-        dbapi_conn.execute("PRAGMA foreign_keys = ON;")
+        super()._on_connect(dbapi_conn, _)
 
         if not self._load_extension:
             return
