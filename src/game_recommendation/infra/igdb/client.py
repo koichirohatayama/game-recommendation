@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 import httpx
@@ -78,7 +78,7 @@ class TwitchOAuthClient:
         access_token = payload["access_token"]
         expires_in = payload.get("expires_in")
         expires_at = (
-            datetime.now(datetime.UTC) + timedelta(seconds=int(expires_in))
+            datetime.now(UTC) + timedelta(seconds=int(expires_in))
             if isinstance(expires_in, (int, float))
             else None
         )
@@ -97,7 +97,7 @@ class IGDBAccessTokenProvider:
     ) -> None:
         self._oauth_client = oauth_client
         self._refresh_margin = refresh_margin
-        self._clock = clock or (lambda: datetime.now(datetime.UTC))
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._cached_token: IGDBAccessToken | None = None
 
     def get_token(self) -> IGDBAccessToken:
@@ -292,7 +292,10 @@ class IGDBClient(IGDBClientProtocol):
                 if not self._should_retry(status_code, attempt):
                     if status_code == 429:
                         raise IGDBRateLimitError("IGDB API rate limit exceeded") from exc
+                    error_body = exc.response.text if exc.response is not None else None
                     msg = f"IGDB API request failed (status={status_code})"
+                    if error_body:
+                        msg = f"{msg}: {error_body.strip()}"
                     raise IGDBRequestError(msg) from exc
 
                 self._logger.warning(

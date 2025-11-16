@@ -36,6 +36,7 @@ class IGDBGameDTO(DTO):
     first_release_date: datetime | None = None
     cover_image_id: str | None = None
     platforms: tuple[int, ...] = ()
+    category: int | None = None
     tags: tuple[int, ...] = ()
 
 
@@ -102,6 +103,7 @@ def _map_game_dict(data: dict[str, Any]) -> IGDBGameDTO:
     cover_obj = data.get("cover") if isinstance(data.get("cover"), dict) else None
     cover_image_id = cover_obj.get("image_id") if isinstance(cover_obj, dict) else None
     platforms = _coerce_platforms(data.get("platforms"))
+    category = data.get("category") if isinstance(data.get("category"), int) else None
     tags = _coerce_int_tuple(data.get("tags"))
 
     return IGDBGameDTO(
@@ -112,6 +114,7 @@ def _map_game_dict(data: dict[str, Any]) -> IGDBGameDTO:
         first_release_date=first_release_date,
         cover_image_id=cover_image_id if isinstance(cover_image_id, str) else None,
         platforms=platforms,
+        category=category,
         tags=tags,
     )
 
@@ -128,6 +131,9 @@ def _map_game_message(message: Any) -> IGDBGameDTO:
             cover_image_id = str(message.cover.image_id)
 
     platforms = _coerce_platforms(message.platforms)
+    category = (
+        int(message.category) if getattr(message, "category", None) not in (None, "") else None
+    )
     tags = tuple(int(tag) for tag in getattr(message, "tags", []))
 
     return IGDBGameDTO(
@@ -138,6 +144,7 @@ def _map_game_message(message: Any) -> IGDBGameDTO:
         first_release_date=_timestamp_to_datetime(ts),
         cover_image_id=cover_image_id,
         platforms=platforms,
+        category=category,
         tags=tags,
     )
 
