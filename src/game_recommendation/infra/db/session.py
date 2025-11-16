@@ -60,6 +60,12 @@ class DatabaseSessionManager:
     def engine(self) -> Engine:
         return self._engine
 
+    @property
+    def session_factory(self) -> sessionmaker[Session]:
+        """Sessionmaker を公開する。"""
+
+        return self._session_factory
+
     @contextmanager
     def session(self) -> Iterator[Session]:
         with self._session_factory() as session:

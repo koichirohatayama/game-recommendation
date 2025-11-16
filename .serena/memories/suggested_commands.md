@@ -6,6 +6,7 @@
 - `uv run pytest` – テストスイート実行。
 - `scripts/test.sh` – uv で pytest 実行。uv がパニックした場合は `.uv_cache`/`.cache` を使い、.venv の pytest へ自動フォールバック。
 - `uv run game-reco ...` – typer ベース CLI エントリ（game_recommendation.cli.app:main）を起動。
+- `uv run game-reco import --igdb-ids <id1,id2,...> [--dry-run] [--output table|json]` – IGDB ID をカンマ区切りで指定し、builder で取得→タグ補完→`igdb_games`/`game_embeddings`/`game_tags`/`game_tag_links`/`user_favorite_games`へ挿入。失敗IDがある場合は終了コード1、dry-run時はDB書き込みなしで生成結果のみ表示。
 - `uv run game-reco igdb search --title "<title>" --match search|contains|exact --limit <n> --offset <n> --output table|json --response-format json|protobuf` – IGDB タイトル検索。成功0／リクエスト失敗1／レート制限2 の終了コード。
 - `uv run streamlit run src/game_recommendation/web/app.py` – Streamlit ダッシュボード起動（app.py などエントリを実装後）。
 - `scripts/migrate.sh` – Alembic でスキーマを適用（デフォルト head）。`scripts/migrate.sh <revision>` で指定リビジョンへ。デフォルトの接続先は `alembic.ini` の `sqlalchemy.url`（sqlite:///./var/game_recommendation.db）。
