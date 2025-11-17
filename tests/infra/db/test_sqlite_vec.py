@@ -70,7 +70,8 @@ def test_upsert_and_get_embedding_roundtrip(
     payload = GameEmbeddingPayload(
         game_id="game-1",
         title_embedding=_make_vector(0.1),
-        description_embedding=_make_vector(0.2),
+        storyline_embedding=_make_vector(0.2),
+        summary_embedding=_make_vector(0.3),
         metadata={"title": "Demo"},
     )
 
@@ -80,17 +81,20 @@ def test_upsert_and_get_embedding_roundtrip(
 
     assert inserted.game_id == "game-1"
     assert inserted.title_embedding == pytest.approx(payload.title_embedding)
-    assert inserted.description_embedding == pytest.approx(payload.description_embedding)
+    assert inserted.storyline_embedding == pytest.approx(payload.storyline_embedding)
+    assert inserted.summary_embedding == pytest.approx(payload.summary_embedding)
     assert inserted.dimension == DIMENSION
     assert reloaded.title_embedding == pytest.approx(payload.title_embedding)
-    assert reloaded.description_embedding == pytest.approx(payload.description_embedding)
+    assert reloaded.storyline_embedding == pytest.approx(payload.storyline_embedding)
+    assert reloaded.summary_embedding == pytest.approx(payload.summary_embedding)
     assert reloaded.metadata["title"] == "Demo"
 
     updated = repository.upsert_embedding(
         GameEmbeddingPayload(
             game_id="game-1",
             title_embedding=_make_vector(0.12),
-            description_embedding=_make_vector(0.25),
+            storyline_embedding=_make_vector(0.22),
+            summary_embedding=_make_vector(0.25),
             metadata={"title": "Updated"},
         )
     )
@@ -108,19 +112,22 @@ def test_search_similar_falls_back_to_python_distance(
             GameEmbeddingPayload(
                 game_id="a",
                 title_embedding=_make_vector(0.1),
-                description_embedding=_make_vector(0.0),
+                storyline_embedding=_make_vector(0.0),
+                summary_embedding=_make_vector(0.0),
                 metadata={"title": "A"},
             ),
             GameEmbeddingPayload(
                 game_id="b",
                 title_embedding=_make_vector(0.2),
-                description_embedding=_make_vector(0.2),
+                storyline_embedding=_make_vector(0.2),
+                summary_embedding=_make_vector(0.2),
                 metadata={"title": "B"},
             ),
             GameEmbeddingPayload(
                 game_id="c",
                 title_embedding=_make_vector(0.5),
-                description_embedding=_make_vector(0.5),
+                storyline_embedding=_make_vector(0.5),
+                summary_embedding=_make_vector(0.5),
                 metadata={"title": "C"},
             ),
         ),
@@ -143,13 +150,15 @@ def test_seed_embeddings_helper_returns_records(
             GameEmbeddingPayload(
                 game_id="seed-1",
                 title_embedding=_make_vector(0.0),
-                description_embedding=_make_vector(0.4),
+                storyline_embedding=_make_vector(0.4),
+                summary_embedding=_make_vector(0.4),
                 metadata={"genre": "RPG"},
             ),
             GameEmbeddingPayload(
                 game_id="seed-2",
                 title_embedding=_make_vector(0.1),
-                description_embedding=_make_vector(0.1),
+                storyline_embedding=_make_vector(0.1),
+                summary_embedding=_make_vector(0.1),
                 metadata={"genre": "ARPG"},
             ),
         ),

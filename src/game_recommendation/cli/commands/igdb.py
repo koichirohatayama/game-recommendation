@@ -54,6 +54,7 @@ def _build_query(title: str, match: TitleMatch, limit: int, offset: int) -> IGDB
             "name",
             "slug",
             "summary",
+            "storyline",
             "first_release_date",
             "cover.image_id",
             "platforms",
@@ -92,6 +93,7 @@ def _game_to_dict(game: IGDBGameDTO) -> dict[str, object]:
         "name": game.name,
         "slug": game.slug,
         "summary": game.summary,
+        "storyline": game.storyline,
         "first_release_date": game.first_release_date.isoformat()
         if game.first_release_date
         else None,

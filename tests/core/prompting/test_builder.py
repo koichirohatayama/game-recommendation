@@ -23,8 +23,10 @@ def _payload(
             name=name,
             slug=name.lower().replace(" ", "-"),
             summary=summary or f"Summary for {name}",
+            storyline=summary or f"Summary for {name}",
         ),
-        description=summary or f"Description for {name}",
+        storyline=summary or f"Description for {name}",
+        summary=summary or f"Summary for {name}",
         tags=(GameTagPayload(slug="adventure", label="Adventure", tag_class="genre"),),
         keywords=("story", "action"),
         favorite=favorite,
@@ -42,9 +44,13 @@ def test_build_prompt_includes_sections() -> None:
         game=_payload(3, "Title Twin", summary="Similar title wording"),
         score=0.74,
     )
-    description_match = SimilarGameExample(
+    storyline_match = SimilarGameExample(
         game=_payload(4, "Lore Mate", favorite=True),
         note="長文類似",
+    )
+    summary_match = SimilarGameExample(
+        game=_payload(5, "Digest Friend", summary="Short digest"),
+        score=0.55,
     )
 
     builder = RecommendationPromptBuilder()
@@ -52,7 +58,8 @@ def test_build_prompt_includes_sections() -> None:
         target=target,
         tag_similar=(tag_match,),
         title_similar=(title_match,),
-        description_similar=(description_match,),
+        storyline_similar=(storyline_match,),
+        summary_similar=(summary_match,),
     )
 
     result = builder.build(data)
@@ -64,6 +71,8 @@ def test_build_prompt_includes_sections() -> None:
     assert "類似度スコア: 0.820" in result.prompt
     assert "ユーザーお気に入り由来" in result.prompt
     assert result.sections.tag_similar[0].startswith("類似度スコア: 0.820")
+    assert "類似結果: ストーリー埋め込み 上位1件" in result.prompt
+    assert "類似結果: サマリー埋め込み 上位1件" in result.prompt
 
 
 def test_build_prompt_switches_template(tmp_path: Path) -> None:

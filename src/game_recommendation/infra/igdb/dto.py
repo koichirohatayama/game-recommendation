@@ -33,6 +33,7 @@ class IGDBGameDTO(DTO):
     name: str
     slug: str | None = None
     summary: str | None = None
+    storyline: str | None = None
     first_release_date: datetime | None = None
     cover_image_id: str | None = None
     platforms: tuple[int, ...] = ()
@@ -110,6 +111,7 @@ def _map_game_dict(data: dict[str, Any]) -> IGDBGameDTO:
     first_release_date = _timestamp_to_datetime(data.get("first_release_date"))
     slug = data.get("slug") if isinstance(data.get("slug"), str) else None
     summary = data.get("summary") if isinstance(data.get("summary"), str) else None
+    storyline = data.get("storyline") if isinstance(data.get("storyline"), str) else None
     cover_obj = data.get("cover") if isinstance(data.get("cover"), dict) else None
     cover_image_id = cover_obj.get("image_id") if isinstance(cover_obj, dict) else None
     platforms = _coerce_platforms(data.get("platforms"))
@@ -121,6 +123,7 @@ def _map_game_dict(data: dict[str, Any]) -> IGDBGameDTO:
         name=name,
         slug=slug,
         summary=summary,
+        storyline=storyline,
         first_release_date=first_release_date,
         cover_image_id=cover_image_id if isinstance(cover_image_id, str) else None,
         platforms=platforms,
@@ -134,6 +137,7 @@ def _map_game_message(message: Any) -> IGDBGameDTO:
     name = str(message.name)
     slug = str(message.slug) if getattr(message, "slug", "") else None
     summary = str(message.summary) if getattr(message, "summary", "") else None
+    storyline = str(message.storyline) if getattr(message, "storyline", "") else None
     ts = int(getattr(message.first_release_date, "seconds", 0) or 0)
     cover_image_id = None
     if getattr(message, "cover", None) is not None and message.HasField("cover"):
@@ -151,6 +155,7 @@ def _map_game_message(message: Any) -> IGDBGameDTO:
         name=name,
         slug=slug,
         summary=summary,
+        storyline=storyline,
         first_release_date=_timestamp_to_datetime(ts),
         cover_image_id=cover_image_id,
         platforms=platforms,

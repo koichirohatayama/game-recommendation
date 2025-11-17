@@ -67,16 +67,25 @@ def settings(tmp_path: Path) -> AppSettings:
 
 
 def _payload(igdb_id: int, *, tag_slug: str, tag_igdb_id: int | None = None) -> EmbeddedGamePayload:
-    game = IGDBGameDTO(id=igdb_id, name=f"Game {igdb_id}", slug=f"game-{igdb_id}", tags=(1,))
+    game = IGDBGameDTO(
+        id=igdb_id,
+        name=f"Game {igdb_id}",
+        slug=f"game-{igdb_id}",
+        summary="summary",
+        storyline="storyline",
+        tags=(1,),
+    )
     embedding = IngestedEmbedding(
         title_embedding=(0.1, 0.2),
-        description_embedding=(0.3, 0.4),
+        storyline_embedding=(0.2, 0.3),
+        summary_embedding=(0.3, 0.4),
         model="test-model",
     )
     effective_tag_id = tag_igdb_id if tag_igdb_id is not None else igdb_id
     return EmbeddedGamePayload(
         igdb_game=game,
-        description="sample",
+        storyline="sample storyline",
+        summary="sample summary",
         tags=(
             GameTagPayload(
                 slug=tag_slug,

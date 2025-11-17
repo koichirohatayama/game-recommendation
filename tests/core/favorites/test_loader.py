@@ -70,7 +70,8 @@ def test_load_returns_embedded_payload(db_manager: DatabaseSessionManager) -> No
                 game_id=str(game.igdb_id),
                 dimension=2,
                 title_embedding=_embedding_to_blob((0.1, 0.2)),
-                description_embedding=_embedding_to_blob((0.3, 0.4)),
+                storyline_embedding=_embedding_to_blob((0.3, 0.4)),
+                summary_embedding=_embedding_to_blob((0.5, 0.6)),
                 embedding_metadata={"model": "test-model", "keywords": ["Co-Op"]},
             )
         )
@@ -92,7 +93,8 @@ def test_load_returns_embedded_payload(db_manager: DatabaseSessionManager) -> No
     assert embedding is not None
     assert embedding.model == "test-model"
     assert embedding.title_embedding == pytest.approx((0.1, 0.2))
-    assert embedding.description_embedding == pytest.approx((0.3, 0.4))
+    assert embedding.storyline_embedding == pytest.approx((0.3, 0.4))
+    assert embedding.summary_embedding == pytest.approx((0.5, 0.6))
     assert embedding.dimension == 2
 
 

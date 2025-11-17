@@ -78,24 +78,27 @@ class IngestedEmbedding(DTO):
     """埋め込みベクトルおよびメタデータ。"""
 
     title_embedding: Sequence[float]
-    description_embedding: Sequence[float]
+    storyline_embedding: Sequence[float]
+    summary_embedding: Sequence[float]
     model: str
     metadata: Mapping[str, Any] = field(default_factory=dict)
     dimension: int | None = None
 
     def __post_init__(self) -> None:
         title = tuple(float(value) for value in self.title_embedding)
-        description = tuple(float(value) for value in self.description_embedding)
+        storyline = tuple(float(value) for value in self.storyline_embedding)
+        summary = tuple(float(value) for value in self.summary_embedding)
         model = _normalize_text(self.model)
         if not model:
             msg = "modelは必須"
             raise ValueError(msg)
         dimension = self.dimension or len(title)
-        if len(title) != len(description) or len(title) != dimension:
-            msg = "title_embeddingとdescription_embeddingの次元が不一致"
+        if len({len(title), len(storyline), len(summary), dimension}) != 1:
+            msg = "title_embeddingとstoryline_embeddingとsummary_embeddingの次元が不一致"
             raise ValueError(msg)
         object.__setattr__(self, "title_embedding", title)
-        object.__setattr__(self, "description_embedding", description)
+        object.__setattr__(self, "storyline_embedding", storyline)
+        object.__setattr__(self, "summary_embedding", summary)
         object.__setattr__(self, "dimension", dimension)
         object.__setattr__(self, "metadata", dict(self.metadata))
 
@@ -115,7 +118,8 @@ class IngestedEmbedding(DTO):
             game_id=str(game_id),
             dimension=self.dimension,
             title_embedding=_blob(self.title_embedding),
-            description_embedding=_blob(self.description_embedding),
+            storyline_embedding=_blob(self.storyline_embedding),
+            summary_embedding=_blob(self.summary_embedding),
             embedding_metadata=metadata,
         )
 
@@ -125,7 +129,8 @@ class EmbeddedGamePayload(DTO):
     """IGDBゲームデータと周辺情報を束ねた入力モデル。"""
 
     igdb_game: IGDBGameDTO
-    description: str | None = None
+    storyline: str | None = None
+    summary: str | None = None
     checksum: str | None = None
     cover_url: str | None = None
     tags: Sequence[GameTagPayload] = field(default_factory=tuple)
@@ -135,15 +140,23 @@ class EmbeddedGamePayload(DTO):
     favorite_notes: str | None = None
 
     def __post_init__(self) -> None:
-        description = _normalize_text(self.description) or _normalize_text(self.igdb_game.summary)
-        if not description:
-            description = self.igdb_game.name
+        storyline = _normalize_text(self.storyline) or _normalize_text(self.igdb_game.storyline)
+        summary = _normalize_text(self.summary) or _normalize_text(self.igdb_game.summary)
+
+        if not storyline and summary:
+            storyline = summary
+        if not summary and storyline:
+            summary = storyline
+        if not storyline and not summary:
+            storyline = self.igdb_game.name
+            summary = self.igdb_game.name
         normalized_tags = _deduplicate_tags(self.tags)
         keywords = tuple(
             keyword.strip() for keyword in self.keywords if keyword and keyword.strip()
         )
 
-        object.__setattr__(self, "description", description)
+        object.__setattr__(self, "storyline", storyline)
+        object.__setattr__(self, "summary", summary)
         object.__setattr__(self, "tags", normalized_tags)
         object.__setattr__(self, "keywords", keywords)
         object.__setattr__(self, "favorite_notes", _normalize_text(self.favorite_notes))
@@ -167,8 +180,8 @@ class EmbeddedGamePayload(DTO):
             igdb_id=self.igdb_game.id,
             slug=self.igdb_game.slug,
             title=self.igdb_game.name,
-            description=self.description or "",
-            summary=self.igdb_game.summary,
+            description=self.primary_description,
+            summary=self.summary,
             release_date=self.release_date,
             cover_url=self.cover_url,
             checksum=self.checksum,
@@ -181,7 +194,8 @@ class EmbeddedGamePayload(DTO):
             raise ValueError(msg)
         metadata = {
             "title": self.igdb_game.name,
-            "summary": self.igdb_game.summary,
+            "summary": self.summary,
+            "storyline": self.storyline,
             "tags": [tag.label for tag in self.tags],
             "tag_classes": [tag.tag_class for tag in self.tags],
             "keywords": list(self.keywords),
@@ -219,23 +233,25 @@ class EmbeddedGamePayload(DTO):
         """プロンプト生成用の文字列を生成する。
 
         Args:
-            max_description_length: 説明文の最大文字数（デフォルト: 500）
+            max_description_length: ストーリー/サマリーの最大文字数（デフォルト: 500）
 
         Returns:
             タイトル・概要・タグをまとめた文字列
         """
+
+        def _sanitize(text: str | None) -> str:
+            value = (text or "").replace("\n", " ").replace("\r", " ")
+            value = " ".join(value.split())
+            if len(value) > max_description_length:
+                value = value[:max_description_length].rsplit(" ", 1)[0] + "..."
+            return value
+
         # タイトル取得（必須）
         title = self.igdb_game.name
 
-        # 説明文の取得とサニタイズ
-        description = self.description or ""
-        # 改行を空白に置換
-        description = description.replace("\n", " ").replace("\r", " ")
-        # 連続した空白を1つにまとめる
-        description = " ".join(description.split())
-        # 長文のトリミング
-        if len(description) > max_description_length:
-            description = description[:max_description_length].rsplit(" ", 1)[0] + "..."
+        # ストーリー/サマリーの取得とサニタイズ
+        storyline = _sanitize(self.storyline)
+        summary = _sanitize(self.summary)
 
         # タグの取得
         tag_labels = [tag.label for tag in self.tags] if self.tags else []
@@ -247,9 +263,23 @@ class EmbeddedGamePayload(DTO):
         # 文字列組み立て
         parts = [
             f"タイトル: {title}",
-            f"説明: {description}" if description else "説明: なし",
+            f"ストーリー: {storyline}" if storyline else "ストーリー: なし",
+            f"サマリー: {summary}" if summary else "サマリー: なし",
             f"タグ: {tags_str}",
             f"キーワード: {keywords_str}",
         ]
 
         return "\n".join(parts)
+
+    @property
+    def primary_description(self) -> str:
+        """説明文として利用する優先テキスト。"""
+
+        return (
+            self.storyline
+            or self.summary
+            or _normalize_text(self.igdb_game.storyline)
+            or _normalize_text(self.igdb_game.summary)
+            or self.igdb_game.name
+            or ""
+        )

@@ -142,11 +142,18 @@ class FavoritesQuery:
         strategy = EmbeddingSimilarityStrategy(vector, selector=_extract_title_embedding)
         return self.sort_with(strategy)
 
-    def sort_by_description_embedding(self, embedding: Sequence[float]) -> FavoritesQuery:
-        """説明文埋め込みとのコサイン類似度でソートする。"""
+    def sort_by_storyline_embedding(self, embedding: Sequence[float]) -> FavoritesQuery:
+        """ストーリー埋め込みとのコサイン類似度でソートする。"""
 
         vector = _normalize_vector(embedding)
-        strategy = EmbeddingSimilarityStrategy(vector, selector=_extract_description_embedding)
+        strategy = EmbeddingSimilarityStrategy(vector, selector=_extract_storyline_embedding)
+        return self.sort_with(strategy)
+
+    def sort_by_summary_embedding(self, embedding: Sequence[float]) -> FavoritesQuery:
+        """サマリー埋め込みとのコサイン類似度でソートする。"""
+
+        vector = _normalize_vector(embedding)
+        strategy = EmbeddingSimilarityStrategy(vector, selector=_extract_summary_embedding)
         return self.sort_with(strategy)
 
     def get(self) -> list[EmbeddedGamePayload]:
@@ -248,11 +255,18 @@ def _extract_title_embedding(payload: EmbeddedGamePayload) -> Sequence[float] | 
     return embedding.title_embedding
 
 
-def _extract_description_embedding(payload: EmbeddedGamePayload) -> Sequence[float] | None:
+def _extract_storyline_embedding(payload: EmbeddedGamePayload) -> Sequence[float] | None:
     embedding = payload.embedding
     if embedding is None:
         return None
-    return embedding.description_embedding
+    return embedding.storyline_embedding
+
+
+def _extract_summary_embedding(payload: EmbeddedGamePayload) -> Sequence[float] | None:
+    embedding = payload.embedding
+    if embedding is None:
+        return None
+    return embedding.summary_embedding
 
 
 __all__ = [

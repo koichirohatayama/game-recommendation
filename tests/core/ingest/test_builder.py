@@ -94,6 +94,7 @@ def sample_game_dto() -> IGDBGameDTO:
         name="The Witcher 3: Wild Hunt",
         slug="the-witcher-3-wild-hunt",
         summary="A story-driven open world RPG set in a visually stunning fantasy universe.",
+        storyline="Geralt seeks his adopted daughter, pursued by the Wild Hunt.",
         first_release_date=datetime(2015, 5, 19, tzinfo=UTC),
         cover_image_id="co1rbi",
         platforms=(6, 48, 49),
@@ -141,7 +142,9 @@ def test_build_success_with_embedding(sample_game_dto: IGDBGameDTO) -> None:
     assert payload.cover_url == "https://example.com/covers/co1rbi.jpg"
     assert payload.embedding is not None
     assert len(payload.embedding.title_embedding) == 768
-    assert len(embedding_service.jobs) == 2
+    assert len(payload.embedding.storyline_embedding) == 768
+    assert len(payload.embedding.summary_embedding) == 768
+    assert len(embedding_service.jobs) == 3
 
 
 def test_build_success_without_embedding(sample_game_dto: IGDBGameDTO) -> None:

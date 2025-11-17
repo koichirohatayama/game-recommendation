@@ -23,7 +23,8 @@ def _make_payload(
 ) -> EmbeddedGamePayload:
     return EmbeddedGamePayload(
         igdb_game=IGDBGameDTO(id=game_id, name=f"Game {game_id}", slug=f"game-{game_id}"),
-        description="desc",
+        storyline="desc",
+        summary="desc",
         checksum=None,
         cover_url=None,
         tags=tags,
@@ -37,7 +38,8 @@ def _make_payload(
 def _make_embedding(values: tuple[float, ...]) -> IngestedEmbedding:
     return IngestedEmbedding(
         title_embedding=values,
-        description_embedding=tuple(value * 2 for value in values),
+        storyline_embedding=tuple(value * 2 for value in values),
+        summary_embedding=tuple(value * 3 for value in values),
         model="unit-test",
     )
 
@@ -116,7 +118,7 @@ def test_title_embedding_similarity_orders_by_cosine() -> None:
     assert [payload.igdb_game.id for payload in results] == [1, 2, 3]
 
 
-def test_description_embedding_usage_and_sort_chain_priority() -> None:
+def test_storyline_embedding_usage_and_sort_chain_priority() -> None:
     payloads = (
         _make_payload(1, embedding=_make_embedding((0.1, 0.9))),
         _make_payload(2, embedding=_make_embedding((0.9, 0.1))),
@@ -128,12 +130,26 @@ def test_description_embedding_usage_and_sort_chain_priority() -> None:
 
     results = (
         FavoritesQuery(payloads)
-        .sort_by_description_embedding((1.0, 0.0))
+        .sort_by_storyline_embedding((1.0, 0.0))
         .sort_with(ReverseIdStrategy())
         .get()
     )
 
     assert [payload.igdb_game.id for payload in results] == [1, 2]
+
+
+def test_summary_embedding_similarity_orders_by_cosine() -> None:
+    query_embedding = (1.0, 0.0)
+
+    payloads = (
+        _make_payload(1, embedding=_make_embedding((1.0, 0.0))),
+        _make_payload(2, embedding=_make_embedding((0.5, 0.5))),
+        _make_payload(3, embedding=None),
+    )
+
+    results = FavoritesQuery(payloads).sort_by_summary_embedding(query_embedding).get()
+
+    assert [payload.igdb_game.id for payload in results] == [1, 2, 3]
 
 
 def test_limit_requires_positive_value() -> None:

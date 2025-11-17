@@ -86,6 +86,7 @@ class FavoriteLoader:
             name=game.title,
             slug=game.slug,
             summary=game.summary,
+            storyline=game.description,
             first_release_date=self._parse_release_date(game.release_date),
             cover_image_id=None,
             platforms=(),
@@ -95,7 +96,8 @@ class FavoriteLoader:
 
         return EmbeddedGamePayload(
             igdb_game=igdb_game,
-            description=game.description,
+            storyline=game.description,
+            summary=game.summary,
             checksum=game.checksum,
             cover_url=game.cover_url,
             tags=tags,
@@ -158,15 +160,15 @@ class FavoriteLoader:
         model = str(metadata.get("model", "unknown")).strip() or "unknown"
         try:
             title_embedding = _blob_to_embedding(record.title_embedding, record.dimension)
-            description_embedding = _blob_to_embedding(
-                record.description_embedding, record.dimension
-            )
+            storyline_embedding = _blob_to_embedding(record.storyline_embedding, record.dimension)
+            summary_embedding = _blob_to_embedding(record.summary_embedding, record.dimension)
         except SQLiteVecError as exc:
             raise FavoriteLoaderError(str(exc)) from exc
 
         return IngestedEmbedding(
             title_embedding=title_embedding,
-            description_embedding=description_embedding,
+            storyline_embedding=storyline_embedding,
+            summary_embedding=summary_embedding,
             model=model,
             metadata=metadata,
             dimension=record.dimension,

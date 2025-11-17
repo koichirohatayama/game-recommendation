@@ -55,7 +55,8 @@ class RecommendationPromptInput(DTO):
     target: EmbeddedGamePayload
     tag_similar: Sequence[SimilarGameExample] = field(default_factory=tuple)
     title_similar: Sequence[SimilarGameExample] = field(default_factory=tuple)
-    description_similar: Sequence[SimilarGameExample] = field(default_factory=tuple)
+    storyline_similar: Sequence[SimilarGameExample] = field(default_factory=tuple)
+    summary_similar: Sequence[SimilarGameExample] = field(default_factory=tuple)
 
 
 @dataclass(slots=True)
@@ -65,7 +66,8 @@ class RecommendationPromptSections(DTO):
     target_overview: str
     tag_similar: tuple[str, ...]
     title_similar: tuple[str, ...]
-    description_similar: tuple[str, ...]
+    storyline_similar: tuple[str, ...]
+    summary_similar: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -105,8 +107,10 @@ class RecommendationPromptBuilder:
             tag_similar_count=len(sections.tag_similar),
             title_similar_block=self._join_section(sections.title_similar),
             title_similar_count=len(sections.title_similar),
-            description_similar_block=self._join_section(sections.description_similar),
-            description_similar_count=len(sections.description_similar),
+            storyline_similar_block=self._join_section(sections.storyline_similar),
+            storyline_similar_count=len(sections.storyline_similar),
+            summary_similar_block=self._join_section(sections.summary_similar),
+            summary_similar_count=len(sections.summary_similar),
         ).strip()
 
         return RecommendationPromptResult(prompt=prompt, template_name=path.name, sections=sections)
@@ -117,12 +121,14 @@ class RecommendationPromptBuilder:
         )
         tag_similar = self._render_similar(data.tag_similar)
         title_similar = self._render_similar(data.title_similar)
-        description_similar = self._render_similar(data.description_similar)
+        storyline_similar = self._render_similar(data.storyline_similar)
+        summary_similar = self._render_similar(data.summary_similar)
         return RecommendationPromptSections(
             target_overview=target_overview,
             tag_similar=tag_similar,
             title_similar=title_similar,
-            description_similar=description_similar,
+            storyline_similar=storyline_similar,
+            summary_similar=summary_similar,
         )
 
     def _render_similar(self, examples: Sequence[SimilarGameExample]) -> tuple[str, ...]:

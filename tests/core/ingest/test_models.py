@@ -22,6 +22,7 @@ def _igdb_game() -> IGDBGameDTO:
         name="Sample Game",
         slug="sample-game",
         summary="A hero saves the world.",
+        storyline="A long tale about the hero.",
         first_release_date=datetime(2024, 1, 2, tzinfo=UTC),
         cover_image_id="cover123",
         platforms=(6,),
@@ -33,7 +34,8 @@ def _igdb_game() -> IGDBGameDTO:
 def _embedding() -> IngestedEmbedding:
     return IngestedEmbedding(
         title_embedding=(0.1, 0.2, 0.3),
-        description_embedding=(0.1, 0.2, 0.3),
+        storyline_embedding=(0.2, 0.3, 0.4),
+        summary_embedding=(0.3, 0.4, 0.5),
         model="test-encoder",
         metadata={"provider": "fake"},
     )
@@ -50,7 +52,8 @@ def _tags() -> list[GameTagPayload]:
 def test_to_igdb_game_builds_insertable_payload() -> None:
     payload = EmbeddedGamePayload(
         igdb_game=_igdb_game(),
-        description="Long description",
+        storyline="Long description",
+        summary="Short story",
         checksum="checksum123",
         cover_url="https://example.com/cover.png",
         tags=_tags(),
@@ -62,6 +65,7 @@ def test_to_igdb_game_builds_insertable_payload() -> None:
     assert result.igdb_id == 123
     assert result.title == "Sample Game"
     assert result.description == "Long description"
+    assert result.summary == "Short story"
     assert result.release_date == "2024-01-02"
     assert result.cover_url == "https://example.com/cover.png"
     cache = json.loads(result.tags_cache)
@@ -84,8 +88,16 @@ def test_to_game_embedding_merges_metadata() -> None:
     title_vec = array("f")
     title_vec.frombytes(result.title_embedding)
     assert tuple(title_vec) == pytest.approx((0.1, 0.2, 0.3))
+    storyline_vec = array("f")
+    storyline_vec.frombytes(result.storyline_embedding)
+    assert tuple(storyline_vec) == pytest.approx((0.2, 0.3, 0.4))
+    summary_vec = array("f")
+    summary_vec.frombytes(result.summary_embedding)
+    assert tuple(summary_vec) == pytest.approx((0.3, 0.4, 0.5))
     metadata = result.embedding_metadata
     assert metadata["title"] == "Sample Game"
+    assert metadata["storyline"] == "A long tale about the hero."
+    assert metadata["summary"] == "A hero saves the world."
     assert "tags" in metadata and "keywords" in metadata
     assert metadata["provider"] == "fake"
 

@@ -102,10 +102,13 @@ class GameBuilder:
 
         # 4. 埋め込み生成（オプション）
         embedding: IngestedEmbedding | None = None
+        storyline = game_dto.storyline or game_dto.summary or game_dto.name
+        summary = game_dto.summary or game_dto.storyline or game_dto.name
         if generate_embedding:
             embedding_result = self._generate_embedding(
                 title=game_dto.name,
-                description=game_dto.summary or game_dto.name,
+                storyline=storyline,
+                summary=summary,
             )
             if embedding_result.is_err:
                 return Result.err(embedding_result.unwrap_err())
@@ -114,7 +117,8 @@ class GameBuilder:
         # 5. 統合データモデルを構築
         payload = EmbeddedGamePayload(
             igdb_game=game_dto,
-            description=game_dto.summary,
+            storyline=storyline,
+            summary=summary,
             checksum=None,  # checksumはIGDB APIから提供されない
             cover_url=cover_url,
             tags=game_tag_payloads,
@@ -141,6 +145,7 @@ class GameBuilder:
                 "name",
                 "slug",
                 "summary",
+                "storyline",
                 "first_release_date",
                 "cover.image_id",
                 "platforms",
@@ -198,39 +203,43 @@ class GameBuilder:
         return self.cover_url_resolver.resolve_cover_url(image_id)
 
     def _generate_embedding(
-        self, *, title: str, description: str
+        self, *, title: str, storyline: str, summary: str
     ) -> Result[IngestedEmbedding, GameBuilderError]:
-        """タイトルと説明文から埋め込みベクトルを生成する。"""
+        """タイトルとストーリー／サマリーから埋め込みベクトルを生成する。"""
         title_job = EmbeddingJob(content=title)
-        description_job = EmbeddingJob(content=description)
+        storyline_job = EmbeddingJob(content=storyline)
+        summary_job = EmbeddingJob(content=summary)
 
         try:
-            vectors = self.embedding_service.embed_many([title_job, description_job])
+            vectors = self.embedding_service.embed_many([title_job, storyline_job, summary_job])
         except EmbeddingServiceError as exc:
             return self._fail_from_error("embedding_generation_failed", exc)
         except Exception as exc:  # noqa: BLE001
             return self._fail_from_error("embedding_generation_unexpected_error", exc)
 
-        if len(vectors) != 2:
+        if len(vectors) != 3:
             error = GameBuilderError("埋め込み生成が不完全です")
-            self.logger.error("embedding_incomplete", expected=2, actual=len(vectors))
+            self.logger.error("embedding_incomplete", expected=3, actual=len(vectors))
             return Result.err(error)
 
         title_vector = self._find_vector(vectors, title_job.job_id)
-        description_vector = self._find_vector(vectors, description_job.job_id)
+        storyline_vector = self._find_vector(vectors, storyline_job.job_id)
+        summary_vector = self._find_vector(vectors, summary_job.job_id)
 
-        if not title_vector or not description_vector:
+        if not title_vector or not storyline_vector or not summary_vector:
             error = GameBuilderError("埋め込みベクトルが見つかりません")
             self.logger.error(
                 "embedding_missing",
                 has_title=title_vector is not None,
-                has_description=description_vector is not None,
+                has_storyline=storyline_vector is not None,
+                has_summary=summary_vector is not None,
             )
             return Result.err(error)
 
         embedding = IngestedEmbedding(
             title_embedding=title_vector.values,
-            description_embedding=description_vector.values,
+            storyline_embedding=storyline_vector.values,
+            summary_embedding=summary_vector.values,
             model=title_vector.model,
             metadata={"embedding_service": self.embedding_service.provider_name},
         )
