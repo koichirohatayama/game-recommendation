@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import typer
 
-from game_recommendation.cli.commands import igdb, import_games
+from game_recommendation.cli.commands import igdb, import_games, prompt
 from game_recommendation.shared.logging import configure_logging
 
 app = typer.Typer(help="ゲームレコメンドツールのCLI")
 
 app.add_typer(igdb.app, name="igdb", help="IGDB 関連の操作")
 app.add_typer(import_games.app, name="import", help="IGDB ID を指定した取り込み")
+app.add_typer(prompt.app, name="prompt", help="判定用プロンプト生成")
 
 
 def main() -> None:
