@@ -1,11 +1,10 @@
 [project]
 name = "game-recommendation"
 version = "0.1.0"
-description = "Skeleton for the game recommendation toolkit"
+description = "Game recommendation toolkit using IGDB, Gemini embeddings, and Discord notifications"
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
-    "streamlit>=1.32",
     "typer>=0.9",
     "httpx>=0.27",
     "sqlalchemy>=2.0",
