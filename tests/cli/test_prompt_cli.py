@@ -54,12 +54,13 @@ def _payload(
     game = IGDBGameDTO(id=igdb_id, name=title, slug=f"game-{igdb_id}", tags=(tag_id,))
     embedding = IngestedEmbedding(
         title_embedding=(embedding_base, embedding_base * 2),
-        description_embedding=(embedding_base * 3, embedding_base * 4),
+        storyline_embedding=(embedding_base * 3, embedding_base * 4),
+        summary_embedding=(embedding_base * 5, embedding_base * 6),
         model="test-model",
     )
     return EmbeddedGamePayload(
         igdb_game=game,
-        description=f"description {igdb_id}",
+        summary=f"summary {igdb_id}",
         tags=(
             GameTagPayload(
                 slug=f"tag-{tag_id}", label=f"Tag {tag_id}", tag_class="genre", igdb_id=tag_id

@@ -13,7 +13,8 @@ from game_recommendation.core.favorites.loader import FavoriteLoader, FavoriteLo
 from game_recommendation.core.favorites.query import (
     EmbeddingSimilarityStrategy,
     TagSimilarityStrategy,
-    _extract_description_embedding,
+    _extract_storyline_embedding,
+    _extract_summary_embedding,
     _extract_title_embedding,
     _safe_score,
     _tag_keys_from_payload,
@@ -156,10 +157,16 @@ def _build_prompt_input(
         _extract_title_embedding,
         top_n=top_n,
     )
-    description_similar = _select_embedding_similar(
+    storyline_similar = _select_embedding_similar(
         candidates,
-        target.embedding.description_embedding if target.embedding else None,
-        _extract_description_embedding,
+        target.embedding.storyline_embedding if target.embedding else None,
+        _extract_storyline_embedding,
+        top_n=top_n,
+    )
+    summary_similar = _select_embedding_similar(
+        candidates,
+        target.embedding.summary_embedding if target.embedding else None,
+        _extract_summary_embedding,
         top_n=top_n,
     )
 
@@ -167,7 +174,8 @@ def _build_prompt_input(
         target=target,
         tag_similar=tag_similar,
         title_similar=title_similar,
-        description_similar=description_similar,
+        storyline_similar=storyline_similar,
+        summary_similar=summary_similar,
     )
 
 
