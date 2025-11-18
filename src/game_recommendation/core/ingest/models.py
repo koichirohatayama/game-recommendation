@@ -229,11 +229,11 @@ class EmbeddedGamePayload(DTO):
         resolved_notes = _normalize_text(notes) or self.favorite_notes
         return UserFavoriteGame(game_id=game_record_id, notes=resolved_notes)
 
-    def to_prompt_string(self, *, max_description_length: int = 500) -> str:
+    def to_prompt_string(self, *, max_description_length: int = 700) -> str:
         """プロンプト生成用の文字列を生成する。
 
         Args:
-            max_description_length: ストーリー/サマリーの最大文字数（デフォルト: 500）
+            max_description_length: ストーリー/サマリーの最大文字数（デフォルト: 700）
 
         Returns:
             タイトル・概要・タグをまとめた文字列
@@ -253,12 +253,9 @@ class EmbeddedGamePayload(DTO):
         storyline = _sanitize(self.storyline)
         summary = _sanitize(self.summary)
 
-        # タグの取得
-        tag_labels = [tag.label for tag in self.tags] if self.tags else []
+        # タグの取得 (class:slug 形式)
+        tag_labels = sorted(f"{tag.tag_class}:{tag.slug}" for tag in self.tags)
         tags_str = ", ".join(tag_labels) if tag_labels else "なし"
-
-        # キーワードの取得
-        keywords_str = ", ".join(self.keywords) if self.keywords else "なし"
 
         # 文字列組み立て
         parts = [
@@ -266,7 +263,6 @@ class EmbeddedGamePayload(DTO):
             f"ストーリー: {storyline}" if storyline else "ストーリー: なし",
             f"サマリー: {summary}" if summary else "サマリー: なし",
             f"タグ: {tags_str}",
-            f"キーワード: {keywords_str}",
         ]
 
         return "\n".join(parts)

@@ -39,8 +39,6 @@ class SimilarGameExample(DTO):
         annotations: list[str] = []
         if self.note:
             annotations.append(self.note)
-        if self.game.favorite:
-            annotations.append("ユーザーお気に入り由来")
         if annotations:
             score_label = f"{score_label} ({'; '.join(annotations)})"
 

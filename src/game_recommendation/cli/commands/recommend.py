@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from enum import StrEnum
 from typing import Annotated
 
@@ -46,19 +47,47 @@ def _create_agent_runner(agent: AgentChoice) -> CodingAgentRunnerProtocol:
     raise AgentRunnerError(msg)
 
 
-def _parse_agent_response(text: str) -> dict[str, object]:
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:  # pragma: no cover - 想定外フォーマット
-        raise AgentRunnerError("エージェントの出力がJSONではありません") from exc
+_JSON_DECODER = json.JSONDecoder()
+_JSON_OBJECT_PATTERN = re.compile(r"\{")
 
-    if not isinstance(payload, dict):
-        msg = "エージェントの出力がJSONオブジェクトではありません"
-        raise AgentRunnerError(msg)
-    if "recommend" not in payload or "reason" not in payload:
-        msg = "エージェントの出力に recommend と reason が含まれていません"
-        raise AgentRunnerError(msg)
-    return payload
+
+def _iter_json_candidates(text: str) -> list[object]:
+    """テキスト内のJSONオブジェクト候補を順番に抽出する。"""
+
+    def _decode_candidate(candidate: str) -> object | None:
+        snippet = candidate.lstrip()
+        if not snippet.startswith("{"):
+            return None
+        try:
+            payload, _ = _JSON_DECODER.raw_decode(snippet)
+        except json.JSONDecodeError:
+            return None
+        return payload
+
+    candidates: list[object] = []
+    direct = _decode_candidate(text)
+    if direct is not None:
+        candidates.append(direct)
+
+    starts = {match.start() for match in _JSON_OBJECT_PATTERN.finditer(text)}
+    for start in sorted(starts):
+        if start == 0:
+            continue
+        decoded = _decode_candidate(text[start:])
+        if decoded is not None:
+            candidates.append(decoded)
+    return candidates
+
+
+def _parse_agent_response(text: str) -> dict[str, object]:
+    for candidate in _iter_json_candidates(text):
+        if not isinstance(candidate, dict):
+            continue
+        if "recommend" in candidate and "reason" in candidate:
+            return candidate
+
+    msg = "エージェントの出力からJSONオブジェクトを抽出できません"
+    raise AgentRunnerError(msg)
 
 
 @app.command()
