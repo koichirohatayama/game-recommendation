@@ -13,7 +13,10 @@ from game_recommendation.core.similarity.dto import (
     SimilarityQuery,
     SimilarityResult,
 )
-from game_recommendation.infra.db.sqlite_vec import EmbeddingRepository, GameEmbeddingSearchResult
+from game_recommendation.infra.db.embedding_repository import (
+    EmbeddingRepository,
+    GameEmbeddingSearchResult,
+)
 from game_recommendation.infra.embeddings.base import (
     EmbeddingJob,
     EmbeddingServiceError,

@@ -8,6 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from game_recommendation.core.favorites.loader import FavoriteLoader
+from game_recommendation.infra.db.embedding_repository import _embedding_to_blob
 from game_recommendation.infra.db.models import (
     GameEmbedding,
     GameTag,
@@ -16,7 +17,6 @@ from game_recommendation.infra.db.models import (
     UserFavoriteGame,
 )
 from game_recommendation.infra.db.session import DatabaseSessionManager
-from game_recommendation.infra.db.sqlite_vec import _embedding_to_blob
 from game_recommendation.shared.config import (
     AppSettings,
     DiscordSettings,

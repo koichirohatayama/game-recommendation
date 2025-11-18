@@ -1,43 +1,32 @@
-"""sqlite-vec を SQLAlchemy ベースで扱う埋め込み DAO。"""
+"""汎用的な埋め込み DAO 実装。"""
 
 from __future__ import annotations
 
 import json
 import math
-import sqlite3
 from abc import ABC, abstractmethod
 from array import array
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Literal
 
 import structlog
-from sqlalchemy import select, text
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from game_recommendation.infra.db.models import GameEmbedding
 from game_recommendation.infra.db.session import DatabaseError, DatabaseSessionManager
-from game_recommendation.shared.config import AppSettings
 from game_recommendation.shared.logging import get_logger
 from game_recommendation.shared.types import DTO
-
-try:  # pragma: no cover - オプショナル依存の存在確認
-    import sqlite_vec  # type: ignore
-except ImportError:  # pragma: no cover
-    sqlite_vec = None
-
 
 BoundLogger = structlog.stdlib.BoundLogger
 DistanceMetric = Literal["cosine", "l2"]
 
 
-class SQLiteVecError(DatabaseError):
-    """sqlite-vec に関するエラー。"""
+class EmbeddingRepositoryError(DatabaseError):
+    """埋め込み DAO に関するエラー。"""
 
-    default_message = "SQLite-vec operation failed"
+    default_message = "Embedding repository operation failed"
 
 
 @dataclass(slots=True)
@@ -114,114 +103,23 @@ class EmbeddingRepository(ABC):
     ) -> list[GameEmbeddingSearchResult]: ...
 
 
-class SQLiteVecConnectionManager(DatabaseSessionManager):
-    """SQLAlchemy エンジンを管理し、sqlite-vec 拡張のロードも担う。"""
-
-    def __init__(
-        self,
-        db_path: Path | None = None,
-        *,
-        settings: AppSettings | None = None,
-        load_extension: bool = True,
-        extension_path: Path | None = None,
-        logger: BoundLogger | None = None,
-    ) -> None:
-        self._load_extension = load_extension
-        self._extension_path = extension_path
-        self._logger = logger or get_logger(__name__, component="sqlite-vec")
-        super().__init__(db_path=db_path, settings=settings, logger=self._logger)
-
-    def initialize_schema(self, revision: str = "head") -> None:
-        try:
-            super().initialize_schema(revision)
-        except DatabaseError as exc:
-            raise SQLiteVecError(str(exc)) from exc
-
-    def ensure_vec_index(self, *, table_name: str, column: str, dimension: int) -> bool:
-        """vec0 仮想テーブルを生成し、利用可能かを返す。"""
-
-        try:
-            with self.engine.begin() as conn:
-                existing_columns = (
-                    conn.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
-                )
-                if existing_columns:
-                    column_names = {row["name"] for row in existing_columns}
-                    if column not in column_names:
-                        conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
-        except OperationalError as exc:
-            self._logger.warning("sqlite_vec.vec_table_inspect_failed", error=str(exc))
-
-        ddl = (
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} "
-            f"USING vec0({column} FLOAT[{dimension}])"
-        )
-        try:
-            with self.engine.begin() as conn:
-                conn.execute(text(ddl))
-        except OperationalError as exc:
-            self._logger.warning("sqlite_vec.vec_table_init_failed", error=str(exc))
-            return False
-        return True
-
-    def _on_connect(
-        self, dbapi_conn: sqlite3.Connection, _
-    ) -> None:  # pragma: no cover - DBAPI hook
-        super()._on_connect(dbapi_conn, _)
-
-        if not self._load_extension:
-            return
-
-        path = self._resolve_extension_path()
-        if path is None:
-            self._logger.warning("sqlite_vec.extension_missing")
-            return
-
-        try:
-            dbapi_conn.enable_load_extension(True)
-            dbapi_conn.load_extension(str(path))
-        except sqlite3.OperationalError as exc:
-            self._logger.warning("sqlite_vec.extension_load_failed", error=str(exc))
-        else:
-            self._logger.info("sqlite_vec.extension_loaded", path=str(path))
-        finally:
-            dbapi_conn.enable_load_extension(False)
-
-    def _resolve_extension_path(self) -> Path | None:
-        if self._extension_path is not None:
-            return Path(self._extension_path)
-        if sqlite_vec is None:
-            return None
-        return Path(sqlite_vec.loadable_path())  # type: ignore[func-returns-value]
-
-
-class SQLiteVecEmbeddingRepository(EmbeddingRepository):
-    """sqlite-vec を用いた埋め込み DAO。"""
+class SQLAlchemyEmbeddingRepository(EmbeddingRepository):
+    """SQLAlchemy を用いた埋め込み DAO。"""
 
     TABLE_NAME = "game_embeddings"
-    VEC_TABLE_NAME = "game_embeddings_vec"
 
     def __init__(
         self,
-        manager: SQLiteVecConnectionManager,
+        manager: DatabaseSessionManager,
         *,
         dimension: int = 768,
-        enable_vec_index: bool = True,
         distance_metric: DistanceMetric = "cosine",
         logger: BoundLogger | None = None,
     ) -> None:
         self._manager = manager
         self._dimension = dimension
         self._distance_metric = distance_metric
-        self._logger = logger or get_logger(__name__, component="sqlite-vec-dao")
-        self._vec_index_ready = False
-
-        if enable_vec_index:
-            self._vec_index_ready = self._manager.ensure_vec_index(
-                table_name=self.VEC_TABLE_NAME,
-                column="summary_embedding",
-                dimension=dimension,
-            )
+        self._logger = logger or get_logger(__name__, component="embedding-dao")
 
     def upsert_embedding(self, payload: GameEmbeddingPayload) -> GameEmbeddingRecord:
         title_vec = _normalize_embedding(payload.title_embedding)
@@ -233,7 +131,7 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
             or len(summary_vec) != self._dimension
         ):
             msg = "Embedding dimension mismatch"
-            raise SQLiteVecError(msg)
+            raise EmbeddingRepositoryError(msg)
 
         title_blob = _embedding_to_blob(title_vec)
         storyline_blob = _embedding_to_blob(storyline_vec)
@@ -268,9 +166,6 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
                 model = existing
                 session.flush()
 
-            if self._vec_index_ready and model.id is not None:
-                self._vec_index_ready = self._sync_vec_index(session, model.id, summary_vec)
-
             session.refresh(model)
 
         return self._model_to_record(model)
@@ -294,50 +189,11 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         normalized = _normalize_embedding(query_embedding)
         if len(normalized) != self._dimension:
             msg = "Query embedding dimension mismatch"
-            raise SQLiteVecError(msg)
+            raise EmbeddingRepositoryError(msg)
 
-        if self._vec_index_ready:
-            try:
-                results = self._search_with_vec_index(normalized, limit)
-                if results:
-                    return results
-                self._logger.info("sqlite_vec.vec_index_empty_fallback")
-            except OperationalError as exc:
-                self._logger.warning("sqlite_vec.query_failed", error=str(exc))
-                self._vec_index_ready = False
+        return self._search_full_scan(normalized, limit)
 
-        return self._search_fallback(normalized, limit)
-
-    def _search_with_vec_index(
-        self,
-        embedding: tuple[float, ...],
-        limit: int,
-    ) -> list[GameEmbeddingSearchResult]:
-        query_vector = json.dumps(embedding)
-        with self._manager.session() as session:
-            rows = (
-                session.execute(
-                    text(
-                        f"""
-                        SELECT ge.game_id, ge.dimension,
-                               ge.title_embedding, ge.storyline_embedding, ge.summary_embedding,
-                               ge.metadata, ge.created_at, ge.updated_at, vec.distance
-                        FROM {self.VEC_TABLE_NAME} AS vec
-                        JOIN {self.TABLE_NAME} AS ge ON ge.id = vec.rowid
-                        WHERE vec.summary_embedding MATCH :query
-                        ORDER BY vec.distance
-                        LIMIT :limit
-                        """
-                    ),
-                    {"query": query_vector, "limit": limit},
-                )
-                .mappings()
-                .all()
-            )
-
-        return [self._row_to_search_result(row) for row in rows]
-
-    def _search_fallback(
+    def _search_full_scan(
         self,
         embedding: tuple[float, ...],
         limit: int,
@@ -364,30 +220,6 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
         results.sort(key=lambda item: item.distance)
         return results[:limit]
 
-    def _sync_vec_index(
-        self,
-        session: Session,
-        row_id: int,
-        embedding: tuple[float, ...],
-    ) -> bool:
-        vector = json.dumps(embedding)
-        try:
-            session.execute(
-                text(f"DELETE FROM {self.VEC_TABLE_NAME} WHERE rowid = :row_id"),
-                {"row_id": row_id},
-            )
-            session.execute(
-                text(
-                    f"INSERT INTO {self.VEC_TABLE_NAME}(rowid, summary_embedding) "
-                    "VALUES (:row_id, :embedding)"
-                ),
-                {"row_id": row_id, "embedding": vector},
-            )
-        except OperationalError as exc:
-            self._logger.warning("sqlite_vec.query_failed", error=str(exc))
-            return False
-        return True
-
     def _model_to_record(self, model: GameEmbedding) -> GameEmbeddingRecord:
         metadata = model.embedding_metadata or {}
         return GameEmbeddingRecord(
@@ -399,24 +231,6 @@ class SQLiteVecEmbeddingRepository(EmbeddingRepository):
             metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
             created_at=_coerce_datetime(model.created_at),
             updated_at=_coerce_datetime(model.updated_at),
-        )
-
-    def _row_to_search_result(self, row: Any) -> GameEmbeddingSearchResult:
-        mapping = row if isinstance(row, dict) else row._mapping  # type: ignore[attr-defined]
-        metadata = mapping.get("metadata") or {}
-        title_blob = mapping["title_embedding"]
-        storyline_blob = mapping["storyline_embedding"]
-        summary_blob = mapping["summary_embedding"]
-        return GameEmbeddingSearchResult(
-            game_id=mapping["game_id"],
-            dimension=mapping["dimension"],
-            title_embedding=_blob_to_embedding(title_blob, mapping["dimension"]),
-            storyline_embedding=_blob_to_embedding(storyline_blob, mapping["dimension"]),
-            summary_embedding=_blob_to_embedding(summary_blob, mapping["dimension"]),
-            metadata=metadata if isinstance(metadata, dict) else json.loads(str(metadata)),
-            created_at=_coerce_datetime(mapping["created_at"]),
-            updated_at=_coerce_datetime(mapping["updated_at"]),
-            distance=float(mapping["distance"]),
         )
 
 
@@ -445,7 +259,7 @@ def _blob_to_embedding(blob: bytes, dimension: int) -> tuple[float, ...]:
     buf = array("f")
     buf.frombytes(bytes(blob))
     if len(buf) != dimension:
-        raise SQLiteVecError("Stored embedding dimension mismatch")
+        raise EmbeddingRepositoryError("Stored embedding dimension mismatch")
     return tuple(float(value) for value in buf)
 
 
@@ -475,11 +289,10 @@ def _coerce_datetime(value: Any) -> datetime:
 
 __all__ = [
     "EmbeddingRepository",
+    "EmbeddingRepositoryError",
     "GameEmbeddingPayload",
     "GameEmbeddingRecord",
     "GameEmbeddingSearchResult",
-    "SQLiteVecConnectionManager",
-    "SQLiteVecEmbeddingRepository",
-    "SQLiteVecError",
+    "SQLAlchemyEmbeddingRepository",
     "seed_embeddings",
 ]

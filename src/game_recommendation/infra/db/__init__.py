@@ -1,24 +1,31 @@
 """DB 向けインフラ。"""
 
-from .models import Base, GameEmbedding, GameTag, GameTagLink, IgdbGame, UserFavoriteGame
-from .repositories import SQLAlchemyGameTagRepository
-from .session import DatabaseError, DatabaseSessionManager
-from .sqlite_vec import (
+from .embedding_repository import (
     EmbeddingRepository,
+    EmbeddingRepositoryError,
     GameEmbeddingPayload,
     GameEmbeddingRecord,
     GameEmbeddingSearchResult,
-    SQLiteVecConnectionManager,
-    SQLiteVecEmbeddingRepository,
-    SQLiteVecError,
+    SQLAlchemyEmbeddingRepository,
     seed_embeddings,
 )
+from .models import (
+    Base,
+    GameEmbedding,
+    GameTag,
+    GameTagLink,
+    IgdbGame,
+    UserFavoriteGame,
+)
+from .session import DatabaseError, DatabaseSessionManager
+from .tag_repository import SQLAlchemyGameTagRepository
 
 __all__ = [
     "Base",
     "DatabaseError",
     "DatabaseSessionManager",
     "EmbeddingRepository",
+    "EmbeddingRepositoryError",
     "GameEmbedding",
     "GameEmbeddingPayload",
     "GameEmbeddingRecord",
@@ -26,9 +33,7 @@ __all__ = [
     "GameTag",
     "GameTagLink",
     "IgdbGame",
-    "SQLiteVecConnectionManager",
-    "SQLiteVecEmbeddingRepository",
-    "SQLiteVecError",
+    "SQLAlchemyEmbeddingRepository",
     "SQLAlchemyGameTagRepository",
     "UserFavoriteGame",
     "seed_embeddings",

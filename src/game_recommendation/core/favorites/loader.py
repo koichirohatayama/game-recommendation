@@ -15,6 +15,10 @@ from game_recommendation.core.ingest.models import (
     GameTagPayload,
     IngestedEmbedding,
 )
+from game_recommendation.infra.db.embedding_repository import (
+    EmbeddingRepositoryError,
+    _blob_to_embedding,
+)
 from game_recommendation.infra.db.models import (
     GameEmbedding,
     GameTag,
@@ -22,7 +26,6 @@ from game_recommendation.infra.db.models import (
     IgdbGame,
     UserFavoriteGame,
 )
-from game_recommendation.infra.db.sqlite_vec import SQLiteVecError, _blob_to_embedding
 from game_recommendation.infra.igdb.dto import IGDBGameDTO
 from game_recommendation.shared.exceptions import DomainError
 from game_recommendation.shared.logging import get_logger
@@ -162,7 +165,7 @@ class FavoriteLoader:
             title_embedding = _blob_to_embedding(record.title_embedding, record.dimension)
             storyline_embedding = _blob_to_embedding(record.storyline_embedding, record.dimension)
             summary_embedding = _blob_to_embedding(record.summary_embedding, record.dimension)
-        except SQLiteVecError as exc:
+        except EmbeddingRepositoryError as exc:
             raise FavoriteLoaderError(str(exc)) from exc
 
         return IngestedEmbedding(

@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from game_recommendation.core.ingest.tag_resolver import TagResolver
 from game_recommendation.infra.db.models import Base, GameTag
-from game_recommendation.infra.db.repositories import SQLAlchemyGameTagRepository
+from game_recommendation.infra.db.tag_repository import SQLAlchemyGameTagRepository
 from game_recommendation.infra.igdb.dto import IGDBTagDTO
 
 

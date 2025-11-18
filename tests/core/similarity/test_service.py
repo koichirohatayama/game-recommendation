@@ -11,9 +11,9 @@ from game_recommendation.core.similarity.service import (
     SimilarityService,
     SimilarityServiceError,
 )
-from game_recommendation.infra.db.sqlite_vec import (
+from game_recommendation.infra.db.embedding_repository import (
+    EmbeddingRepositoryError,
     GameEmbeddingSearchResult,
-    SQLiteVecError,
 )
 from game_recommendation.infra.embeddings.base import (
     EmbeddingJob,
@@ -166,7 +166,7 @@ def test_embedding_failure_returns_error_result() -> None:
 
 
 def test_repository_failure_returns_error_result() -> None:
-    repo_error = SQLiteVecError("db down")
+    repo_error = EmbeddingRepositoryError("db down")
     service = SimilarityService(
         embedding_service=FakeEmbeddingService(),
         repository=FakeRepository(results=[], error=repo_error),

@@ -24,8 +24,8 @@ from game_recommendation.infra.db.models import (
     IgdbGame,
     UserFavoriteGame,
 )
-from game_recommendation.infra.db.repositories import SQLAlchemyGameTagRepository
 from game_recommendation.infra.db.session import DatabaseSessionManager
+from game_recommendation.infra.db.tag_repository import SQLAlchemyGameTagRepository
 from game_recommendation.infra.embeddings import get_default_embedding_service
 from game_recommendation.infra.igdb import build_igdb_client
 from game_recommendation.shared.config import AppSettings, get_settings

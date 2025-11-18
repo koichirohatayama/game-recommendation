@@ -1,4 +1,4 @@
-"""sqlite_vec DAO の骨組みテスト。"""
+'"""埋め込み DAO の骨組みテスト。"""'
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import pytest
 from pydantic import SecretStr
 
 from game_recommendation.infra.db import (
+    DatabaseSessionManager,
     GameEmbeddingPayload,
-    SQLiteVecConnectionManager,
-    SQLiteVecEmbeddingRepository,
+    SQLAlchemyEmbeddingRepository,
     seed_embeddings,
 )
 from game_recommendation.shared.config import (
@@ -36,13 +36,12 @@ def app_settings(tmp_path: Path) -> AppSettings:
 
 
 @pytest.fixture()
-def connection_manager(
+def session_manager(
     tmp_path: Path,
     app_settings: AppSettings,
-) -> SQLiteVecConnectionManager:
-    manager = SQLiteVecConnectionManager(
+) -> DatabaseSessionManager:
+    manager = DatabaseSessionManager(
         db_path=tmp_path / "game_embeddings.sqlite",
-        load_extension=False,
         settings=app_settings,
     )
     manager.initialize_schema()
@@ -51,11 +50,10 @@ def connection_manager(
 
 
 @pytest.fixture()
-def repository(connection_manager: SQLiteVecConnectionManager) -> SQLiteVecEmbeddingRepository:
-    return SQLiteVecEmbeddingRepository(
-        connection_manager,
+def repository(session_manager: DatabaseSessionManager) -> SQLAlchemyEmbeddingRepository:
+    return SQLAlchemyEmbeddingRepository(
+        session_manager,
         dimension=DIMENSION,
-        enable_vec_index=True,
     )
 
 
@@ -65,7 +63,7 @@ def _make_vector(seed: float) -> tuple[float, ...]:
 
 
 def test_upsert_and_get_embedding_roundtrip(
-    repository: SQLiteVecEmbeddingRepository,
+    repository: SQLAlchemyEmbeddingRepository,
 ) -> None:
     payload = GameEmbeddingPayload(
         game_id="game-1",
@@ -103,8 +101,8 @@ def test_upsert_and_get_embedding_roundtrip(
     assert updated.metadata["title"] == "Updated"
 
 
-def test_search_similar_falls_back_to_python_distance(
-    repository: SQLiteVecEmbeddingRepository,
+def test_search_similar_runs_full_scan(
+    repository: SQLAlchemyEmbeddingRepository,
 ) -> None:
     seed_embeddings(
         repository,
@@ -142,7 +140,7 @@ def test_search_similar_falls_back_to_python_distance(
 
 
 def test_seed_embeddings_helper_returns_records(
-    repository: SQLiteVecEmbeddingRepository,
+    repository: SQLAlchemyEmbeddingRepository,
 ) -> None:
     stored = seed_embeddings(
         repository,
