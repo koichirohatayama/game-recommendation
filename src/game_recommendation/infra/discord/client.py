@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -26,6 +26,7 @@ class DiscordWebhookRequest:
 
     content: str
     username: str | None = None
+    embeds: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -63,6 +64,8 @@ class DiscordWebhookClient:
         """単一メッセージを送信する。"""
 
         payload = {"content": request.content}
+        if request.embeds:
+            payload["embeds"] = request.embeds
         username = request.username or self._default_username
         if username:
             payload["username"] = username

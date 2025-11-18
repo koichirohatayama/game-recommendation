@@ -10,5 +10,5 @@
 - `uv run game-reco igdb search --title "<title>" --match search|contains|exact --limit <n> --offset <n> --output table|json --response-format json|protobuf` – IGDB タイトル検索。成功0／リクエスト失敗1／レート制限2 の終了コード。
 - `uv run game-reco prompt generate --igdb-id <id> [--limit <n>] [--output-file <path>]` – 単一IGDB IDの統合モデルを構築し、お気に入りデータの類似スコア（タグ・タイトル埋め込み・説明埋め込み）で上位を添えて判定用プロンプトを生成。標準出力へ表示し、`--output-file` で保存も可。対象取得失敗時は終了コード1、お気に入り取得失敗時は終了コード2。
 - `uv run game-reco recommend run --igdb-id <id> --agent codex-cli|claude-code` – 単一IGDB IDで統合モデルを構築し、判定用プロンプト生成後、指定エージェントで実行して JSON(`{"recommend": bool, "reason": str}`) を標準出力。設定読込・エージェント実行・出力不正時は終了コード1。
-- `uv run streamlit run src/game_recommendation/web/app.py` – Streamlit ダッシュボード起動（app.py などエントリを実装後）。
+- `uv run game-reco recommend-release --release-date YYYY-MM-DD --agent codex-cli|claude-code` – 指定リリース日のゲームをIGDBから取得し、統合ビルド→判定プロンプト生成→エージェント判定を実行。`recommend: true`のみDiscordへ通知し、通知失敗はエラーとして終了コード1。省略時の日付は当日、レート制限時は終了コード2。
 - `scripts/migrate.sh` – Alembic でスキーマを適用（デフォルト head）。`scripts/migrate.sh <revision>` で指定リビジョンへ。デフォルトの接続先は `alembic.ini` の `sqlalchemy.url`（sqlite:///./var/game_recommendation.db）。

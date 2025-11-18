@@ -86,7 +86,7 @@ def _parse_agent_response(text: str) -> dict[str, object]:
         if "recommend" in candidate and "reason" in candidate:
             return candidate
 
-    msg = "エージェントの出力からJSONオブジェクトを抽出できません"
+    msg = "エージェントの出力がJSONではありません"
     raise AgentRunnerError(msg)
 
 
