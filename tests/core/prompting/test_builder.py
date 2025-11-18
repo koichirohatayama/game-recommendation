@@ -65,11 +65,13 @@ def test_build_prompt_includes_sections() -> None:
     result = builder.build(data)
 
     assert result.template_name == DEFAULT_TEMPLATE_NAME
-    assert "目的: 新着ゲームがユーザーの好みに合うかを判定する。" in result.prompt
+    assert (
+        "目的: 新着ゲームがユーザーの好みに合うかを、複合的な類似指標に基づいて判定する。"
+        in result.prompt
+    )
     assert target.igdb_game.name in result.prompt
     assert "類似結果: タグ類似 上位1件" in result.prompt
     assert "類似度スコア: 0.820" in result.prompt
-    assert "ユーザーお気に入り由来" in result.prompt
     assert result.sections.tag_similar[0].startswith("類似度スコア: 0.820")
     assert "類似結果: ストーリー埋め込み 上位1件" in result.prompt
     assert "類似結果: サマリー埋め込み 上位1件" in result.prompt

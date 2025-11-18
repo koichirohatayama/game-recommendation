@@ -44,8 +44,8 @@ def test_to_prompt_string_basic_output() -> None:
     assert "タイトル: Sample Game" in result
     assert "ストーリー: A hero saves the world." in result
     assert "サマリー: A short summary." in result
-    assert "タグ: RPG, Fantasy" in result
-    assert "キーワード: hero, adventure" in result
+    assert "タグ: genre:rpg, keyword:fantasy" in result
+    assert "キーワード:" not in result
 
 
 def test_to_prompt_string_handles_newlines_in_description() -> None:
@@ -135,7 +135,7 @@ def test_to_prompt_string_handles_empty_keywords() -> None:
 
     result = payload.to_prompt_string()
 
-    assert "キーワード: なし" in result
+    assert "キーワード:" not in result
 
 
 def test_to_prompt_string_respects_custom_max_length() -> None:
@@ -175,9 +175,10 @@ def test_to_prompt_string_complete_example() -> None:
         "タイトル: The Legend of Heroes",
         "ストーリー: A story-driven JRPG with turn-based combat. Features a vast world.",
         "サマリー: An epic JRPG adventure",
-        "タグ: JRPG, Turn-Based",
-        "キーワード: story, combat, world",
+        "タグ: gameplay:turn-based, genre:jrpg",
     ]
 
     for expected in expected_lines:
         assert expected in result
+
+    assert "キーワード:" not in result
