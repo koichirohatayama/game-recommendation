@@ -42,14 +42,15 @@ class TagSimilarityMetric(Protocol):
         """類似度を返す。"""
 
 
-class JaccardTagSimilarity:
-    """タグ集合のJaccard類似度。"""
+class DiceTagSimilarity:
+    """タグ集合のダイス係数。"""
 
     def compute(self, base: set[TagKey], candidate: set[TagKey]) -> float:
-        union = base | candidate
-        if not union:
+        if not base or not candidate:
             return 0.0
-        return len(base & candidate) / len(union)
+        intersection = len(base & candidate)
+        denominator = len(base) + len(candidate)
+        return 2 * intersection / denominator
 
 
 @dataclass(slots=True)
@@ -57,7 +58,7 @@ class TagSimilarityStrategy:
     """タグ類似度を用いたソート戦略。"""
 
     target_tags: set[TagKey]
-    metric: TagSimilarityMetric = field(default_factory=JaccardTagSimilarity)
+    metric: TagSimilarityMetric = field(default_factory=DiceTagSimilarity)
 
     def score(self, payload: EmbeddedGamePayload) -> float:
         candidate = _tag_keys_from_payload(payload.tags)
@@ -127,12 +128,10 @@ class FavoritesQuery:
         *,
         metric: TagSimilarityMetric | None = None,
     ) -> FavoritesQuery:
-        """タグ類似度(Jaccardなど)でソートする。"""
+        """タグ類似度(ダイス係数など)でソートする。"""
 
         target = _normalize_tag_identifiers(tag_identifiers)
-        strategy = TagSimilarityStrategy(
-            target_tags=target, metric=metric or JaccardTagSimilarity()
-        )
+        strategy = TagSimilarityStrategy(target_tags=target, metric=metric or DiceTagSimilarity())
         return self.sort_with(strategy)
 
     def sort_by_title_embedding(self, embedding: Sequence[float]) -> FavoritesQuery:
@@ -274,7 +273,7 @@ __all__ = [
     "FavoritesQueryError",
     "FavoritesSortStrategy",
     "TagSimilarityMetric",
-    "JaccardTagSimilarity",
+    "DiceTagSimilarity",
     "TagSimilarityStrategy",
     "EmbeddingSimilarityStrategy",
 ]

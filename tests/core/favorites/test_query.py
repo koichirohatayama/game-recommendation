@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 from game_recommendation.core.favorites.query import (
+    DiceTagSimilarity,
     FavoritesQuery,
     FavoritesQueryError,
-    JaccardTagSimilarity,
 )
 from game_recommendation.core.ingest.models import (
     EmbeddedGamePayload,
@@ -94,12 +94,12 @@ def test_tag_similarity_sorting_allows_strategy_override() -> None:
     default_sorted = FavoritesQuery(payloads).sort_by_tag_similarity(target_tags).get()
     assert [payload.igdb_game.id for payload in default_sorted] == [1, 2, 3]
 
-    class ReverseJaccard(JaccardTagSimilarity):
+    class ReverseDice(DiceTagSimilarity):
         def compute(self, base: set[tuple[str, str]], candidate: set[tuple[str, str]]) -> float:
             return 1.0 - super().compute(base, candidate)
 
     reversed_sorted = (
-        FavoritesQuery(payloads).sort_by_tag_similarity(target_tags, metric=ReverseJaccard()).get()
+        FavoritesQuery(payloads).sort_by_tag_similarity(target_tags, metric=ReverseDice()).get()
     )
     assert [payload.igdb_game.id for payload in reversed_sorted] == [3, 2, 1]
 
