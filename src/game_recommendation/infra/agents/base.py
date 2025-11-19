@@ -49,7 +49,7 @@ class CommandRunner(CommandRunnerProtocol):
     """subprocess.run を包む薄いラッパー。"""
 
     def run(self, command: Sequence[str]) -> CommandResult:
-        completed = subprocess.run(  # noqa: S603 - 信頼済みCLI実行を想定
+        completed = subprocess.run(
             list(command),
             text=True,
             capture_output=True,

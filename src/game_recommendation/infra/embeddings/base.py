@@ -134,7 +134,7 @@ class RetryExecutor:
         for attempt in range(1, self.policy.max_attempts + 1):
             try:
                 return operation()
-            except Exception as exc:  # noqa: BLE001 - エラー内容をそのまま伝播
+            except Exception as exc:
                 last_error = exc
                 if attempt >= self.policy.max_attempts:
                     raise

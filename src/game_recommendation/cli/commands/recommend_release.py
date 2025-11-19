@@ -72,7 +72,7 @@ def _fetch_release_game_ids(*, client, release_date: date, logger: BoundLogger) 
     )
 
     try:
-        payload = client._perform_request(  # noqa: SLF001 - IGDBClientの内部実装を再利用
+        payload = client._perform_request(
             endpoint="release_dates",
             query=query,
             response_format=IGDBResponseFormat.JSON,

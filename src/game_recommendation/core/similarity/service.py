@@ -66,7 +66,7 @@ class SimilarityService:
             embedding = self.embedding_service.embed(job)
         except EmbeddingServiceError as exc:
             return self._fail("embedding_failed", exc)
-        except Exception as exc:  # noqa: BLE001 - 原因追跡のためにそのまま保持
+        except Exception as exc:
             return self._fail("embedding_unexpected_error", exc)
 
         fetch_limit = max(limit * 2, limit)
@@ -74,7 +74,7 @@ class SimilarityService:
             candidates = self.repository.search_similar(embedding.values, limit=fetch_limit)
         except BaseAppError as exc:
             return self._fail("repository_failed", exc)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return self._fail("repository_unexpected_error", exc)
 
         filtered = self._filter_results(query, candidates)

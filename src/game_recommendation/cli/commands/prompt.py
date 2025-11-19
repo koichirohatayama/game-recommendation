@@ -54,7 +54,7 @@ class InMemoryTagRepository(GameTagRepositoryProtocol):
             try:
                 tag_class = tag.tag_class
                 igdb_id = tag.igdb_id
-            except AttributeError as exc:  # noqa: PERF203 - 正確な例外が必要
+            except AttributeError as exc:
                 raise ValueError("tag must have tag_class and igdb_id") from exc
             if igdb_id is None:
                 continue
@@ -215,7 +215,7 @@ def _generate_prompt(
 
 
 @app.command()
-def generate(  # noqa: PLR0913 - CLI での引数が多いため許容
+def generate(
     igdb_id: Annotated[int, typer.Option("--igdb-id", "-i", help="プロンプト対象のIGDB ID")],
     output_file: Annotated[
         Path | None,

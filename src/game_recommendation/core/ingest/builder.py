@@ -161,7 +161,7 @@ class GameBuilder:
             response = self.igdb_client.fetch_games(query, response_format=IGDBResponseFormat.JSON)
         except BaseAppError as exc:
             return self._fail("igdb_fetch_failed", igdb_id, exc)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return self._fail("igdb_fetch_unexpected_error", igdb_id, exc)
 
         if not response.items:
@@ -214,7 +214,7 @@ class GameBuilder:
             vectors = self.embedding_service.embed_many([title_job, storyline_job, summary_job])
         except EmbeddingServiceError as exc:
             return self._fail_from_error("embedding_generation_failed", exc)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return self._fail_from_error("embedding_generation_unexpected_error", exc)
 
         if len(vectors) != 3:

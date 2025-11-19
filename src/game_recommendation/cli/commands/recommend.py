@@ -91,7 +91,7 @@ def _parse_agent_response(text: str) -> dict[str, object]:
 
 
 @app.command()
-def run(  # noqa: D401 - Typer ヘルプで説明
+def run(
     igdb_id: Annotated[int, typer.Option("--igdb-id", "-i", help="判定対象のIGDB ID")],
     agent: Annotated[
         AgentChoice,

@@ -134,7 +134,7 @@ def _render_json(items: Iterable[IGDBGameDTO]) -> None:
 
 
 @app.command()
-def search(  # noqa: PLR0913 - CLI のため引数が多い
+def search(
     title: Annotated[str, typer.Option("--title", "-t", help="検索するゲームタイトル")] = ...,
     match: Annotated[
         TitleMatch,

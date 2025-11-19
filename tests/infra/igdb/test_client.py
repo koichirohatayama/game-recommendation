@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -135,7 +135,7 @@ def test_fetch_games_protobuf() -> None:
     assert game.platforms == (99,)
     assert game.first_release_date == datetime.fromtimestamp(
         1_700_000_000,
-        tz=timezone.utc,  # noqa: UP017 - Py311 fallback
+        tz=UTC,
     )
     assert game.tags == (77,)
 

@@ -100,7 +100,7 @@ def _parse_igdb_ids(raw_ids: str) -> tuple[int, ...]:
             continue
         try:
             igdb_id = int(part)
-        except ValueError as exc:  # noqa: PERF203 - 正確な例外が重要
+        except ValueError as exc:
             raise typer.BadParameter(f"IGDB ID は整数で指定してください: {part}") from exc
         if igdb_id in seen:
             continue

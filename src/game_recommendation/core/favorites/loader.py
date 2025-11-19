@@ -70,7 +70,7 @@ class FavoriteLoader:
             return payloads
         except FavoriteLoaderError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.logger.error("favorite_loader.failed", error=str(exc))
             raise FavoriteLoaderError(str(exc)) from exc
 

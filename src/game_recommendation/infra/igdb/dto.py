@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -74,7 +74,7 @@ def parse_games_from_payload(payload: bytes, fmt: IGDBResponseFormat) -> tuple[I
 def _parse_games_from_json(payload: bytes) -> tuple[IGDBGameDTO, ...]:
     try:
         decoded = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:  # noqa: PERF203 - 明確な例外
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid JSON payload for IGDB response") from exc
 
     if not isinstance(decoded, list):
@@ -173,7 +173,7 @@ def _timestamp_to_datetime(value: Any) -> datetime | None:
         return None
     if timestamp <= 0:
         return None
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc)  # noqa: UP017 - Py311 fallback
+    return datetime.fromtimestamp(timestamp, tz=UTC)
 
 
 def _coerce_platforms(raw: Any) -> tuple[int, ...]:
@@ -231,7 +231,7 @@ def parse_tags_from_payload(payload: bytes) -> tuple[IGDBTagDTO, ...]:
 
     try:
         decoded = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:  # noqa: PERF203 - 明確な例外
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid JSON payload for IGDB tags") from exc
 
     if not isinstance(decoded, list):

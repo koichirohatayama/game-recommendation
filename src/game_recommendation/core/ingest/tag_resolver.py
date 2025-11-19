@@ -105,7 +105,7 @@ class TagResolver:
                 fetched = self.igdb_client.fetch_tags(tag_class=tag_class, igdb_ids=missing)
             except BaseAppError as exc:
                 return self._fail("igdb_fetch_failed", exc)
-            except Exception as exc:  # noqa: BLE001 - 想定外の例外も捕捉
+            except Exception as exc:
                 return self._fail("igdb_fetch_unexpected_error", exc)
 
             to_save: list[GameTag] = []
@@ -125,7 +125,7 @@ class TagResolver:
                 self.repository.save_all(to_save)
             except BaseAppError as exc:
                 return self._fail("tag_save_failed", exc)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return self._fail("tag_save_unexpected_error", exc)
 
             missing_ids = set(missing) - {record.igdb_id for record in to_save}
